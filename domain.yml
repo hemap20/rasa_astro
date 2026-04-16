@@ -1,35 +1,133 @@
 version: "3.1"
 
+intents:
+  - inform
+  - affirm
+  - deny
+  - ask_astrology_question
+
+entities:
+  - pain_point
+  - user_name
+
 slots:
-  recipient:
+  # Logic & Shuffling Slots
+  session_style:
     type: text
+    influence_conversation: true
     mappings:
-      - type: from_llm
-  amount:
+      - type: custom
+  omkar_mood:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: custom
+  entry_type:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: custom
+
+  # Memory Layer & 21-Day Rule Slots
+  last_remedy_date:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+  pain_point:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: from_entity
+        entity: pain_point
+
+  # Barnum Flip & Topic Tracking Slots
+  topic_counter:
     type: float
+    influence_conversation: false
     mappings:
-      - type: from_llm
+      - type: custom
+  force_personality_trait:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: custom
+
+  # Current Sky (Gochar) & Diagnosis Slots
+  current_sky_context:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: custom
+  astro_diagnosis:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+  astro_remedy:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+  sudden_insight:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: custom
+  retention_hook_text:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+
+  # Flow Control Slots
+  user_confirmation:
+    type: bool
+    influence_conversation: true
+    mappings:
+      - type: from_intent
+        intent: affirm
+        value: true
+      - type: from_intent
+        intent: deny
+        value: false
+  ready_for_remedy:
+    type: bool
+    influence_conversation: true
+    mappings:
+      - type: from_intent
+        intent: affirm
+        value: true
+      - type: from_intent
+        intent: deny
+        value: false
 
 responses:
-  utter_ask_recipient:
-    - text: "Who would you like to send money to?"
+  # Note: These are base templates. The LLM Rephraser will transform these into Omkar's Hinglish voice.
+  utter_ask_user_confirmation:
+    - text: "Batiye, kya main sahi disha mein dekh raha hoon? Kyunki grah jhoot nahi bolti."
+  utter_ask_ready_for_remedy:
+    - text: "Aapke dukh ka karan mujhe samajh aa gaya hai. Kya aap taiyaar hain iska rasta jaanne ke liye?"
+  utter_diagnosis:
+    - text: "{astro_diagnosis}"
+  utter_remedy:
+    - text: "{astro_remedy}"
+  utter_sudden_realization:
+    - text: "{sudden_insight}"
+  utter_retention_hook:
+    - text: "{retention_hook_text}"
 
-  utter_ask_amount:
-    - text: "How much money would you like to send?"
+actions:
+  - action_handle_topic_change
+  - action_determine_session_style
+  - action_inject_current_sky
+  - action_omkar_entry_hook
+  - action_provide_diagnosis
+  - action_provide_upay
+  - action_sudden_realization
+  - action_retention_hook
+  - action_direct_question
 
-  utter_transfer_complete:
-    - text: "All done. {amount} has been sent to {recipient}."
-
-  utter_free_chitchat_response:
-    - text: "placeholder"
-      metadata:
-        rephrase: True
-        rephrase_prompt: |
-          The following is a conversation with an AI assistant built with Rasa.
-          The assistant can help the user transfer money.
-          The assistant is helpful, creative, clever, and very friendly.
-          The user is making small talk, and the assistant should respond, keeping things light.
-          Context / previous conversation with the user:
-          {{history}}
-          {{current_input}}
-          Suggested AI Response:
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true # CRITICAL for the Memory Layer

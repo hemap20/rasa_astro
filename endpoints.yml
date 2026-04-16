@@ -32,6 +32,11 @@ action_endpoint:
 #    username: <username used for authentication>
 #    password: <password used for authentication>
 
+tracker_store:
+  type: sql
+  dialect: "sqlite"
+  db: "rasa_history.db"
+
 # Event broker which all conversation events should be streamed to.
 # https://rasa.com/docs/rasa-pro/production/event-brokers
 
@@ -44,12 +49,18 @@ action_endpoint:
 # Allow rephrasing of responses using a Rasa-hosted model
 nlg:
   type: rephrase
+  rephrase_all: true  # This is the "Magic Switch" that enables it globally
   llm:
-    model_group: rasa_command_generation_model
-
+    model_group: openai-gpt
+    temperature: 0.7
 model_groups:
   - id: rasa_command_generation_model
     models:
       - provider: rasa
         model: rasa/command-generator-llama-3.1-8b-instruct
         api_base: "https://tutorial-llm.rasa.ai"
+  - id: gemini
+    models:
+      - provider: google
+        model: gemini-flash
+        api_key: ${GEMINI_API_KEY}  
