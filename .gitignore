@@ -1,0 +1,16 @@
+# Rasa specific
+models/
+.rasa/
+*.db
+*.log
+.env
+auth.json
+
+# Python specific
+__pycache__/
+.venv/
+.python-version
+uv.lock
+
+# Secret Keys
+credentials.yml
