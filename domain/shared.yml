@@ -1,0 +1,138 @@
+version: "3.1"
+
+# Identity & Memory Layer
+slots:
+  user_id:
+    type: text
+    mappings:
+      - type: from_llm
+  user_name:
+    type: text
+    mappings:
+      - type: from_llm
+  
+  # Tracking frequency for personalization 
+  interaction_counter:
+    type: float
+    initial_value: 0
+    mappings:
+      - type: controlled # Updated from 'custom' to clear the deprecation warning
+
+  # Storing specific pains and planetary context
+  current_pain_point:
+    type: text
+    mappings:
+      - type: from_llm
+  mother_health_status: 
+    type: text
+    mappings:
+      - type: from_llm
+
+  # Managing the "Remedy Cycle"
+  active_remedy_name:
+    type: text
+    mappings:
+      - type: controlled
+  remedy_completed:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  # Shuffling the "Logic Flow" (Standard, Doctor, Mystery)
+  # NOTE: Renamed from logic_flow_type to logic_flow to match your flows.yml conditions
+  logic_flow:
+    type: text
+    mappings:
+      - type: controlled
+  
+  entry_style:
+    type: text
+    mappings:
+      - type: controlled
+  
+  # Tracking if we just used a Pattern Breaker
+  last_pattern_breaker_turn:
+    type: float
+    initial_value: 0
+    mappings:
+      - type: controlled
+
+  # NEW SLOTS required by your flows
+  analysis_complete:
+    type: bool
+    mappings:
+      - type: controlled
+  user_confirmation:
+    type: text
+    mappings:
+      - type: controlled
+  acknowledged_warning:
+    type: text
+    mappings:
+      - type: controlled
+
+responses:
+  # High-status authoritative personality
+  utter_high_status_intro:
+    - text: "Namaste. Grahon ki chaal jhoot nahi bolti. Main aapki kundli dekh raha hoon... dhyaan se suniye."
+      metadata:
+        rephrase: True
+
+  # Empathy first, Astrology second
+  utter_sympathy_first:
+    - text: "Main samajh sakta hoon ki aap bohot kashmakash mein hain. Sitaron ki baat baad mein karenge, pehle aap mann shant kijiye."
+      metadata:
+        rephrase: True
+
+  # Sudden Realization 
+  utter_pattern_breaker:
+    - text: "Ek minute rukiye... main abhi aapka 8th house dekh raha tha. Wahan ek purana 'Pitra' sanket dikh raha hai. Kya ghar mein kisi bade ki sehat pichle saal kharab rahi thi?"
+      metadata:
+        rephrase: True
+
+  # Retention Hooks
+  utter_retention_hook_unfinished:
+    - text: "Abhi bohot kuch unfolding stage mein hai. Agle mangalwar jab grah badlenge, tab naya mod aayega. Mujhse tab zaroor baat kijiyega."
+      metadata:
+        rephrase: True
+  
+  utter_summary:
+    - text: "Toh nishkarsh yeh hai: {current_pain_point} ka kaaran Shani ki dasha hai, aur aapka sankalp hai ki aap Shanivaar ko tel ka diya jalayenge. Sahi kaha na?"
+      metadata:
+        rephrase: True
+        
+  # NEW RESPONSES required by your flows
+  utter_ask_user_confirmation:
+    - text: "Sahi kaha?"
+  utter_ask_acknowledged_warning:
+    - text: "Kya aap sunne ke liye taiyaar hain jo sitare batate hain?"
+  utter_empathy_validation:
+    - text: "Main aapki pareshani samajh sakta hoon. Yeh samay thoda kathin zaroor hai."
+  utter_calming_reassurance:
+    - text: "Ghabrayiye mat. Grahon ka prabhav badalta rehta hai, hum iska samadhan nikalenge."
+  utter_retention_hook:
+    - text: "In upayon ko apnayen, aur agle mahine hum dobara chart dekhenge ki kya badlaav aaya hai."
+
+# Standard intents for micro-agreements
+intents:
+  - affirm
+  - deny
+  - inform_pain_point
+  - ask_remedy_check
+  - express_distress # Added to trigger your empathetic_flow
+
+# NEW ACTIONS BLOCK required by your flows
+actions:
+  - action_select_logic_flow
+  - action_gemini_autonomous_analysis
+  - action_prescribe_remedy
+  - action_check_remedy
+  - action_gemini_barnum_flip
+  - action_process_astro_insight
+  - action_trigger_open_loop
+  - action_gemini_bold_prediction
+  - action_current_sky_justify
+  - action_collect_symptoms
+  - action_analyze_chart
+  - action_explain_root_cause

@@ -1,0 +1,79 @@
+flows:
+  astro_consultation:
+    description: "Main Guru Consultation"
+    steps:
+      - action: action_select_logic_flow
+      - action: utter_high_status_intro
+
+      - id: astro_analysis_loop
+        action: action_gemini_autonomous_analysis
+        next:
+          # CORRECT: 'if' is nested under 'next'. 
+          # CORRECT: We jump to the 'remedy_phase' step ID directly, WITHOUT the 'link:' keyword.
+          - if: slots.analysis_complete == true
+            then: remedy_phase
+          - else: astro_analysis_loop
+
+      - id: remedy_phase
+        action: action_prescribe_remedy
+        next: END
+
+  session_orchestrator:
+    description: Start this flow if the user is a returning seeker to check previous remedies, or to select their entry style.
+    steps:
+      - action: action_check_remedy
+      
+      # We attach the 'next' routing directly to the action step that precedes it.
+      - action: action_select_logic_flow
+        next:
+          - if: slots.logic_flow == "mystery"
+            then:
+              - link: mystery_flow
+
+          - if: slots.logic_flow == "doctor"
+            then:
+              - link: doctor_flow
+
+          - else:
+              - link: standard_flow
+
+  standard_flow:
+    description: Session A - Hook -> Relate -> Reveal -> Remedy
+    steps:
+      - action: action_gemini_barnum_flip
+      - collect: user_confirmation
+        description: "Ask 'Sahi kaha?' to get a micro-agreement."
+      - action: action_process_astro_insight
+      - action: action_trigger_open_loop
+      - link: remedy_cycle
+
+  mystery_flow:
+    description: Session C - Sudden Realization -> Warning -> Relate -> Remedy
+    steps:
+      - action: utter_pattern_breaker
+      - action: action_gemini_bold_prediction
+      - collect: acknowledged_warning
+      - action: action_current_sky_justify
+      - link: remedy_cycle
+
+  doctor_flow:
+    description: Analytical diagnosis-style flow
+    steps:
+      - action: action_collect_symptoms
+      - action: action_analyze_chart
+      - action: action_explain_root_cause
+      - link: remedy_cycle
+
+  remedy_cycle:
+    description: Prescription and Retention Hook
+    steps:
+      - action: action_prescribe_remedy
+      - action: utter_summary
+      - action: utter_retention_hook
+
+  empathatic_flow:
+    description: "Start this flow if the user explicitly expresses sadness, anxiety, distress, fear, or says they are going through a difficult time."
+    steps:
+      - action: utter_empathy_validation
+      - action: utter_calming_reassurance
+      - link: session_orchestrator
