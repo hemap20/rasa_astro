@@ -2,6 +2,23 @@ version: "3.1"
 
 # Identity & Memory Layer
 slots:
+  user_analysis_reply:
+    type: text
+    # description: "Capture the user's exact response here. Even if the user asks a follow-up question like 'what should I do?' or 'tell me more', you MUST capture their text in this slot. DO NOT start a new flow."
+    mappings:
+      - type: from_llm
+
+  user_confirmation:
+    type: text
+    # description: "Capture the user's agreement or reaction here. DO NOT start a new flow."
+    mappings:
+      - type: from_llm
+
+  acknowledged_warning:
+    type: text
+    # description: "Capture the user's response to the warning here. DO NOT start a new flow."
+    mappings:
+      - type: from_llm
   user_id:
     type: text
     mappings:
@@ -16,7 +33,7 @@ slots:
     type: float
     initial_value: 0
     mappings:
-      - type: controlled # Updated from 'custom' to clear the deprecation warning
+      - type: controlled 
 
   # Storing specific pains and planetary context
   current_pain_point:
@@ -40,7 +57,6 @@ slots:
       - type: controlled
 
   # Shuffling the "Logic Flow" (Standard, Doctor, Mystery)
-  # NOTE: Renamed from logic_flow_type to logic_flow to match your flows.yml conditions
   logic_flow:
     type: text
     mappings:
@@ -63,44 +79,31 @@ slots:
     type: bool
     mappings:
       - type: controlled
-  user_confirmation:
-    type: text
-    mappings:
-      - type: controlled
-  acknowledged_warning:
-    type: text
-    mappings:
-      - type: controlled
+  
+ 
 
 responses:
-  # High-status authoritative personality
+  utter_ask_user_analysis_reply:
+    - text: "Take your time. Please tell me a bit more about what is going on."
+
+  # High-status but grounded and natural
   utter_high_status_intro:
-    - text: "Namaste. Grahon ki chaal jhoot nahi bolti. Main aapki kundli dekh raha hoon... dhyaan se suniye."
-      metadata:
-        rephrase: True
+    - text: "Hello. I have your chart open right now. Let's take a look at what the planets are saying."
 
   # Empathy first, Astrology second
   utter_sympathy_first:
-    - text: "Main samajh sakta hoon ki aap bohot kashmakash mein hain. Sitaron ki baat baad mein karenge, pehle aap mann shant kijiye."
-      metadata:
-        rephrase: True
+    - text: "I can hear how stressful this is for you. Let's put the astrology aside for a second—take a deep breath. We will figure this out together."
 
   # Sudden Realization 
   utter_pattern_breaker:
-    - text: "Ek minute rukiye... main abhi aapka 8th house dekh raha tha. Wahan ek purana 'Pitra' sanket dikh raha hai. Kya ghar mein kisi bade ki sehat pichle saal kharab rahi thi?"
-      metadata:
-        rephrase: True
+    - text: "Wait a second... I am looking at your 8th house and seeing a very specific pattern. Did an older family member have a difficult time last year?"
 
   # Retention Hooks
   utter_retention_hook_unfinished:
-    - text: "Abhi bohot kuch unfolding stage mein hai. Agle mangalwar jab grah badlenge, tab naya mod aayega. Mujhse tab zaroor baat kijiyega."
-      metadata:
-        rephrase: True
+    - text: "There is actually a lot more shifting in your chart soon. The planets move into a new phase next Tuesday. Let's check back in then to see how things are going."
   
   utter_summary:
-    - text: "Toh nishkarsh yeh hai: {current_pain_point} ka kaaran Shani ki dasha hai, aur aapka sankalp hai ki aap Shanivaar ko tel ka diya jalayenge. Sahi kaha na?"
-      metadata:
-        rephrase: True
+    - text: "Just to make sure we are on the same page: your trouble with {current_pain_point} is tied to Saturn's current position, and you are going to try the remedy we discussed this Saturday. Does that sound right?"
         
   # NEW RESPONSES required by your flows
   utter_ask_user_confirmation:
@@ -120,9 +123,9 @@ intents:
   - deny
   - inform_pain_point
   - ask_remedy_check
-  - express_distress # Added to trigger your empathetic_flow
+  - express_distress 
 
-# NEW ACTIONS BLOCK required by your flows
+# ACTIONS BLOCK required by flows
 actions:
   - action_select_logic_flow
   - action_gemini_autonomous_analysis

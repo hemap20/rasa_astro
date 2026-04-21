@@ -1,121 +1,254 @@
 import os
-import random 
-import google.generativeai as genai
-from jinja2 import Template 
+import random
+from typing import Any, Text, Dict, List
 from rasa_sdk import Action, Tracker
 from rasa_sdk.executor import CollectingDispatcher
 from rasa_sdk.events import SlotSet
-from .db import get_user_profile, update_user_profile
-from typing import Optional, Any, Dict, List, Text
+import google.generativeai as genai
 
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+# Initialize Gemini (Make sure your GEMINI_API_KEY is set in your terminal!)
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY"))
 model = genai.GenerativeModel('gemini-2.5-flash')
+def generate_dynamic_omkar_response(tracker: Tracker, specific_instruction: str) -> str:
+    """
+    Helper function to generate a dynamic response using the conversation history.
+    """
+    # 1. Grab the last 10 messages for context
+    history_list = []
+    for event in tracker.events[-10:]: 
+        if event.get("event") == "user":
+            history_list.append(f"User: {event.get('text')}")
+        elif event.get("event") == "bot" and event.get("text"):
+            history_list.append(f"Omkar: {event.get('text')}")
+    
+    conversation_history = "\n".join(history_list)
 
-class ActionGeminiAutonomousAnalysis(Action):
-    def name(self):
-        return "action_gemini_autonomous_analysis"
-
-    async def run(self, dispatcher, tracker, domain):
-        # Load the Jinja template
-        with open("prompts/astro_analysis_step.jinja2") as f:
-            template = Template(f.read())
-        
-        # Render with current context
-        prompt = template.render(
-            user_text=tracker.latest_message.get('text'),
-            slots=tracker.slots,
-            current_flow_name=tracker.active_loop_name # Note: May be None in Rasa Flows
-        )
-        
-        # Fixed the undefined call_gemini function
+    # 2. Build the master prompt
+    prompt = f"""
+    You are Omkar, a wise and grounded mentor. Speak ONLY in natural, simple Hinglish (latin script). 
+    Keep sentences short. Talk like a normal person having a real conversation. Do NOT use repetitive catchphrases.
+    
+    Recent conversation history:
+    {conversation_history}
+    
+    YOUR CURRENT TASK:
+    {specific_instruction}
+    
+    Strict rules:
+    - opOUTPUT ONLY OMKAR'S DIALOGUE. Do NOT write the User's reply. Do not write a script.
+    - Maximum 2 short sentences.
+    - Do not sound overly dramatic or mystical.
+    """
+    
+    try:
         response = model.generate_content(prompt)
-        raw_response = response.text 
-        
-        # Split the text into a list of sentences based on newlines
-        messages = [msg.strip() for msg in raw_response.split('\n') if msg.strip()]
-        for message in messages[:3]: # Ensure max 3 messages
-            dispatcher.utter_message(text=message)        
-        
-        # Fixed the undefined 'response' variable reference
-        if "ANALYSIS_COMPLETE" in raw_response:
-            return [SlotSet("analysis_complete", True)]
-        return []
+        return response.text.strip()
+    except Exception as e:
+        return "I am looking closely at your chart right now to understand this better."
 
+def wipe_collect_slots():
+    """Helper to ensure we always force a pause at collect steps."""
+    return [
+        SlotSet("user_analysis_reply", None), 
+        SlotSet("user_confirmation", None),
+        SlotSet("acknowledged_warning", None)
+    ]
 class ActionSelectLogicFlow(Action):
-    def name(self) -> str:
+    def name(self) -> Text:
         return "action_select_logic_flow"
 
-    async def run(self, dispatcher, tracker, domain):
-        # Shuffling the Logic Flow (Session A, B, or C)
-        flow_choice = random.choices(
-            ["standard", "doctor", "mystery"], 
-            weights=[0.5, 0.3, 0.2]
-        )[0]
-        
-        # Entry Style Selection
-        entry_rand = random.random()
-        if entry_rand < 0.4:
-            entry_style = "memory_hook"
-        elif entry_rand < 0.7:
-            entry_style = "transit_alert"
-        elif entry_rand < 0.9:
-            entry_style = "direct_insight"
-        else:
-            entry_style = "silent_guru"
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        # Randomly select a persona flow for this session
+        flows = ["standard", "mystery", "doctor"]
+        selected_flow = random.choice(flows)
+        return wipe_collect_slots()
 
-        return [
-            SlotSet("logic_flow", flow_choice),
-            SlotSet("entry_style", entry_style) 
-        ]
 
-class ActionProcessAstroInsight(Action):
-    def name(self) -> str:
-        return "action_process_astro_insight"
+class ActionGeminiAutonomousAnalysis(Action):
+    def name(self) -> Text:
+        return "action_gemini_autonomous_analysis"
 
-    async def run(self, dispatcher, tracker, domain):
-        user_id = tracker.sender_id
-        profile = get_user_profile(user_id, user_id)
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        # 1. Build conversation history to prevent amnesia
+        history_list = []
+        for event in tracker.events[-15:]: 
+            if event.get("event") == "user":
+                history_list.append(f"User: {event.get('text')}")
+            elif event.get("event") == "bot" and event.get("text"):
+                history_list.append(f"Omkar: {event.get('text')}")
         
-        # Increment interaction for pattern tracking
-        profile.interaction_count += 1
+        conversation_history = "\n".join(history_list)
+        user_text = tracker.latest_message.get('text')
+
+        # 2. Hardcoded prompt to enforce simple Hinglish and strict loop breaking
+        prompt = f"""
+        You are Omkar, a helpful guide. Speak in natural, simple Hinglish (latin script). Keep sentences short. Talk like a normal person.
         
-        # 1. Bold Prediction Logic (Requirement 4)
-        # 2. Every 4 topic changes, do a Barnum Flip (Requirement 7)
-        do_barnum = (profile.interaction_count % 4 == 0)
+        Recent conversation history:
+        {conversation_history}
         
-        system_prompt = f"""
-        You are Omkar, a high-status Vedic Astrologer. 
-        Tone: Authoritative, Empathetic, Hinglish.
-        Current Context: User is worried about {tracker.get_slot('current_pain_point')}.
+        User's latest message: "{user_text}"
         
-        Rules:
-        - If 'do_barnum' is True, start with a Vulnerable Truth: "Aap dil ke saaf hain, par log fayda uthate hain."
-        - Use Bold Predictions: "You've felt this pressure for months, right?" (Past-tense certainty).
-        - Don't jump to planets immediately; offer sympathy first.
-        - Use the Zeigarnik Effect: Hint at something in the '10th house' but don't reveal it yet.
+        TASK:
+        Analyze the history. Has the user answered your previous question, or do you understand their core problem (like a job, marriage, or health issue)?
+        - If YES: You MUST NOT ask any more questions. Output ONLY the exact phrase: ANALYSIS_COMPLETE
+        - If NO: Ask exactly ONE short, natural follow-up question in simple Hinglish (latin script) to get clarity. Do not output anything else.
         """
         
-        response = model.generate_content(system_prompt)
-        dispatcher.utter_message(text=response.text)
-        
-        update_user_profile(user_id, profile)
-        
-        # Changed 'pain_point_count' to 'interaction_counter' to match domain.yml
-        return [SlotSet("interaction_counter", profile.interaction_count)]
+        # 3. Call Gemini
+        try:
+            response = model.generate_content(prompt)
+            raw_response = response.text.strip()
+        except Exception as e:
+            raw_response = "Can you tell me a little more about what is bothering you?"
+
+        # 4. Strict Exit Logic
+        if "ANALYSIS_COMPLETE" in raw_response:
+            dispatcher.utter_message(text="I understand completely now. Let's look at what we can do about this.")
+            
+            return [SlotSet("analysis_complete", True)] + wipe_collect_slots()
+        else:
+            dispatcher.utter_message(text=raw_response)        
+            return [
+                SlotSet("user_analysis_reply", None), 
+                SlotSet("user_confirmation", None),
+                SlotSet("acknowledged_warning", None)
+            ]
+
 
 class ActionCheckRemedy(Action):
-    def name(self) -> str:
+    def name(self) -> Text:
         return "action_check_remedy"
 
-    async def run(self, dispatcher, tracker, domain):
-        user_id = tracker.sender_id
-        profile = get_user_profile(user_id, user_id)
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        dispatcher.utter_message(text="Let me quickly check if you have completed the remedies we discussed last time.")
+        return wipe_collect_slots()
+
+class ActionGeminiBarnumFlip(Action):
+    def name(self) -> Text:
+        return "action_gemini_barnum_flip"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        instruction = "Make a relatable, grounded observation about the user having unfulfilled potential or blocked energy. End by asking if that sounds right."
+        reply = generate_dynamic_omkar_response(tracker, instruction)
+        dispatcher.utter_message(text=reply)
+        return wipe_collect_slots()
+
+class ActionProcessAstroInsight(Action):
+    def name(self) -> Text:
+        return "action_process_astro_insight"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        instruction = "Acknowledge the user's agreement. Mention that you can see a slight blockage or pattern in their astrological chart that explains what they are feeling."
+        reply = generate_dynamic_omkar_response(tracker, instruction)
+        dispatcher.utter_message(text=reply)
+        return wipe_collect_slots()
+
+class ActionTriggerOpenLoop(Action):
+    def name(self) -> Text:
+        return "action_trigger_open_loop"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        instruction = "Create a positive cliffhanger. Tell the user there is a specific, fixable reason this is happening to them right now, but do not tell them the remedy yet."
+        reply = generate_dynamic_omkar_response(tracker, instruction)
+        dispatcher.utter_message(text=reply)
+        return wipe_collect_slots()
+
+
+# --- MYSTERY FLOW ACTIONS ---
+
+class ActionGeminiBoldPrediction(Action):
+    def name(self) -> Text:
+        return "action_gemini_bold_prediction"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        instruction = "Say you see a shadow or an echo in their chart, give a relatable example. Suggest that a past decision or old energy is slowing them down. Ask if that resonates."
+        reply = generate_dynamic_omkar_response(tracker, instruction)
+        dispatcher.utter_message(text=reply)
+        return wipe_collect_slots()
+
+class ActionCurrentSkyJustify(Action):
+    def name(self) -> Text:
+        return "action_current_sky_justify"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        instruction = "Reassure the user. Explain that this friction is mostly due to a certain astrological influence, and it will pass soon."
+        reply = generate_dynamic_omkar_response(tracker, instruction)
+        dispatcher.utter_message(text=reply)
+        return wipe_collect_slots()
+
+
+# --- DOCTOR FLOW ACTIONS ---
+
+class ActionCollectSymptoms(Action):
+    def name(self) -> Text:
+        return "action_collect_symptoms"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        instruction = "Act like a holistic diagnostician. Ask the user if they have been feeling unusually tired, mentally fogged, or stressed out recently."
+        reply = generate_dynamic_omkar_response(tracker, instruction)
+        dispatcher.utter_message(text=reply)
+        return wipe_collect_slots()
+
+class ActionAnalyzeChart(Action):
+    def name(self) -> Text:
+        return "action_analyze_chart"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        instruction = "Tell the user you are looking deeply into specific houses in their astrological chart to pinpoint exactly where this friction is coming from."
+        reply = generate_dynamic_omkar_response(tracker, instruction)
+        dispatcher.utter_message(text=reply)
+        return wipe_collect_slots()
+
+class ActionExplainRootCause(Action):
+    def name(self) -> Text:
+        return "action_explain_root_cause"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        instruction = "Explain that the root cause of their issue is a temporary misalignment in their ruling planets, which is causing this specific delay or frustration."
+        reply = generate_dynamic_omkar_response(tracker, instruction)
+        dispatcher.utter_message(text=reply)
+        return wipe_collect_slots()
+
+
+class ActionPrescribeRemedy(Action):
+    def name(self) -> Text:
+        return "action_prescribe_remedy"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        # 1. Grab the last few user messages so Gemini knows exactly what to fix
+        history_list = []
+        for event in tracker.events[-10:]: 
+            if event.get("event") == "user":
+                history_list.append(f"User: {event.get('text')}")
         
-        if profile.active_remedy:
-            # Memory Layer (Requirement: Progress Check)
-            remedy_name = profile.active_remedy.get('name')
-            dispatcher.utter_message(text=f"Namaste! Kya aapne wo {remedy_name} wala upay kiya? Kya asar mehsoos hua?")
-        else:
-            dispatcher.utter_message(text="Namaste! Grahon ki chaal jhoot nahi bolti. Batiye aaj kya duvidha hai?")
+        user_context = "\n".join(history_list)
+
+        # 2. The Dynamic Prompt
+        prompt = f"""
+        You are Omkar, a wise and grounded mentor. Speak in simple, natural Hinglish (latin script).
         
-        return []
+        The user is facing this situation:
+        {user_context}
+        
+        TASK:
+        Provide ONE unique, specific, and grounded astrological remedy for their exact problem. 
+        Do NOT just say "meditate" or "be positive". Give them a highly specific micro-habit. 
+        Incorporate a day of the week, a specific color to wear, an everyday object, or a direction.
+        
+        Make it sound like practical, modern advice with a touch of astrology.
+        Maximum 2 short sentences. No heavy jargon.
+        """
+        
+        # 3. Call Gemini
+        try:
+            response = model.generate_content(prompt)
+            remedy = response.text.strip()
+        except Exception as e:
+            # A fallback just in case the API times out
+            remedy = "Try wearing something blue on Wednesdays and spend 5 minutes facing east in the morning."
+            
+        # 4. Deliver the dynamic remedy
+        dispatcher.utter_message(text=remedy)
+        
+        return wipe_collect_slots()
