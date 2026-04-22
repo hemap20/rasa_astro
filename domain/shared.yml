@@ -4,19 +4,16 @@ version: "3.1"
 slots:
   user_analysis_reply:
     type: text
-    # description: "Capture the user's exact response here. Even if the user asks a follow-up question like 'what should I do?' or 'tell me more', you MUST capture their text in this slot. DO NOT start a new flow."
     mappings:
       - type: from_llm
 
   user_confirmation:
     type: text
-    # description: "Capture the user's agreement or reaction here. DO NOT start a new flow."
     mappings:
       - type: from_llm
 
   acknowledged_warning:
     type: text
-    # description: "Capture the user's response to the warning here. DO NOT start a new flow."
     mappings:
       - type: from_llm
   user_id:
@@ -37,10 +34,6 @@ slots:
 
   # Storing specific pains and planetary context
   current_pain_point:
-    type: text
-    mappings:
-      - type: from_llm
-  mother_health_status: 
     type: text
     mappings:
       - type: from_llm

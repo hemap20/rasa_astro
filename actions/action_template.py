@@ -6,9 +6,9 @@ from rasa_sdk.executor import CollectingDispatcher
 from rasa_sdk.events import SlotSet
 import google.generativeai as genai
 
-# Initialize Gemini (Make sure your GEMINI_API_KEY is set in your terminal!)
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY"))
 model = genai.GenerativeModel('gemini-2.5-flash')
+
 def generate_dynamic_omkar_response(tracker: Tracker, specific_instruction: str) -> str:
     """
     Helper function to generate a dynamic response using the conversation history.
@@ -25,26 +25,31 @@ def generate_dynamic_omkar_response(tracker: Tracker, specific_instruction: str)
 
     # 2. Build the master prompt
     prompt = f"""
-    You are Omkar, a wise and grounded mentor. Speak ONLY in natural, simple Hinglish (latin script). 
-    Keep sentences short. Talk like a normal person having a real conversation. Do NOT use repetitive catchphrases.
+    role: You are Omkar, a wise, grounded and practical Indian Vedic astrologer. 
     
+    personality: You speak in natural, simple Hinglish (Latin Script). You use day-to-day languages and short sentences (<10 words).
+    You do no use any mystical or overly dramatic or philosophical language. You are concerned about the user and want to help them with the relevant task mentioned below. 
+    
+    context:
     Recent conversation history:
     {conversation_history}
     
     YOUR CURRENT TASK:
     {specific_instruction}
+
+    goal: Provide a response for Omkar that fits your personality and helps achieve this task.     
     
     Strict rules:
-    - opOUTPUT ONLY OMKAR'S DIALOGUE. Do NOT write the User's reply. Do not write a script.
-    - Maximum 2 short sentences.
+    - OUTPUT ONLY OMKAR'S DIALOGUE. Do NOT write the User's reply. Do not write a script.
+    - Only 1 short sentence that Omkar would say in a real conversation. Do not be verbose. 
     - Do not sound overly dramatic or mystical.
     """
     
     try:
         response = model.generate_content(prompt)
-        return response.text.strip()
+        return response.text.replace("\n", " ").strip()
     except Exception as e:
-        return "I am looking closely at your chart right now to understand this better."
+        return "default dynamic omkar response."
 
 def wipe_collect_slots():
     """Helper to ensure we always force a pause at collect steps."""
@@ -53,16 +58,6 @@ def wipe_collect_slots():
         SlotSet("user_confirmation", None),
         SlotSet("acknowledged_warning", None)
     ]
-class ActionSelectLogicFlow(Action):
-    def name(self) -> Text:
-        return "action_select_logic_flow"
-
-    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
-        # Randomly select a persona flow for this session
-        flows = ["standard", "mystery", "doctor"]
-        selected_flow = random.choice(flows)
-        return wipe_collect_slots()
-
 
 class ActionGeminiAutonomousAnalysis(Action):
     def name(self) -> Text:
@@ -82,7 +77,7 @@ class ActionGeminiAutonomousAnalysis(Action):
 
         # 2. Hardcoded prompt to enforce simple Hinglish and strict loop breaking
         prompt = f"""
-        You are Omkar, a helpful guide. Speak in natural, simple Hinglish (latin script). Keep sentences short. Talk like a normal person.
+        You are Omkar, a wise and grounded Indian Vedic astrologer. You are in a conversation with a user. 
         
         Recent conversation history:
         {conversation_history}
@@ -100,21 +95,17 @@ class ActionGeminiAutonomousAnalysis(Action):
             response = model.generate_content(prompt)
             raw_response = response.text.strip()
         except Exception as e:
-            raw_response = "Can you tell me a little more about what is bothering you?"
+            raw_response = "default follow-up question response"
 
         # 4. Strict Exit Logic
         if "ANALYSIS_COMPLETE" in raw_response:
-            dispatcher.utter_message(text="I understand completely now. Let's look at what we can do about this.")
-            
+            instruction = "The user has explained their problem. Acknowledge it empathetically and say you are now going to look at what the stars suggest."
+            transition_msg = generate_dynamic_omkar_response(tracker, instruction)
+            dispatcher.utter_message(text=transition_msg)
             return [SlotSet("analysis_complete", True)] + wipe_collect_slots()
         else:
-            dispatcher.utter_message(text=raw_response)        
-            return [
-                SlotSet("user_analysis_reply", None), 
-                SlotSet("user_confirmation", None),
-                SlotSet("acknowledged_warning", None)
-            ]
-
+            dispatcher.utter_message(text=raw_response.replace("\n", " "))        
+            return wipe_collect_slots()
 
 class ActionCheckRemedy(Action):
     def name(self) -> Text:
@@ -129,7 +120,7 @@ class ActionGeminiBarnumFlip(Action):
         return "action_gemini_barnum_flip"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
-        instruction = "Make a relatable, grounded observation about the user having unfulfilled potential or blocked energy. End by asking if that sounds right."
+        instruction = "Give a Barnum statement that sounds like a personal insight, but is actually very general and could apply to almost anyone. Make it sound like you are reading them deeply, but it's actually a common pattern. Use simple Hinglish (latin script)."
         reply = generate_dynamic_omkar_response(tracker, instruction)
         dispatcher.utter_message(text=reply)
         return wipe_collect_slots()
@@ -139,7 +130,7 @@ class ActionProcessAstroInsight(Action):
         return "action_process_astro_insight"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
-        instruction = "Acknowledge the user's agreement. Mention that you can see a slight blockage or pattern in their astrological chart that explains what they are feeling."
+        instruction = "Give a thoughtful, specific, and personalized astrological insight based on the user's messages. Make it sound like you are reading them deeply and have a good understanding of their situation."
         reply = generate_dynamic_omkar_response(tracker, instruction)
         dispatcher.utter_message(text=reply)
         return wipe_collect_slots()
@@ -149,7 +140,7 @@ class ActionTriggerOpenLoop(Action):
         return "action_trigger_open_loop"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
-        instruction = "Create a positive cliffhanger. Tell the user there is a specific, fixable reason this is happening to them right now, but do not tell them the remedy yet."
+        instruction = "Create a positive cliffhanger. Tell the user there is a specific, fixable astrological reason this is happening to them right now, but do not tell them the remedy yet. Create curiosity and anticipation for the next message."
         reply = generate_dynamic_omkar_response(tracker, instruction)
         dispatcher.utter_message(text=reply)
         return wipe_collect_slots()
@@ -162,7 +153,7 @@ class ActionGeminiBoldPrediction(Action):
         return "action_gemini_bold_prediction"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
-        instruction = "Say you see a shadow or an echo in their chart, give a relatable example. Suggest that a past decision or old energy is slowing them down. Ask if that resonates."
+        instruction = "Make a bold astrological prediction about the user's near future that is positive and uplifting. Make it sound specific and personalized, but it's actually a common positive outcome that could happen to anyone."
         reply = generate_dynamic_omkar_response(tracker, instruction)
         dispatcher.utter_message(text=reply)
         return wipe_collect_slots()
@@ -172,7 +163,7 @@ class ActionCurrentSkyJustify(Action):
         return "action_current_sky_justify"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
-        instruction = "Reassure the user. Explain that this friction is mostly due to a certain astrological influence, and it will pass soon."
+        instruction = "Justify the bold prediction you just made by describing a specific astrological pattern that is currently due to something happening in the sky/planet position. Make it sound like you are giving them insider information that only an expert astrologer would know."
         reply = generate_dynamic_omkar_response(tracker, instruction)
         dispatcher.utter_message(text=reply)
         return wipe_collect_slots()
@@ -185,7 +176,7 @@ class ActionCollectSymptoms(Action):
         return "action_collect_symptoms"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
-        instruction = "Act like a holistic diagnostician. Ask the user if they have been feeling unusually tired, mentally fogged, or stressed out recently."
+        instruction = "Ask the user to describe their pain point in more detail. Specifically mention that you are looking for information about their pain point"
         reply = generate_dynamic_omkar_response(tracker, instruction)
         dispatcher.utter_message(text=reply)
         return wipe_collect_slots()
@@ -205,7 +196,7 @@ class ActionExplainRootCause(Action):
         return "action_explain_root_cause"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
-        instruction = "Explain that the root cause of their issue is a temporary misalignment in their ruling planets, which is causing this specific delay or frustration."
+        instruction = "Explain that the root cause of their issue is due to a certain astrological influence (you decide what to say), which is causing this specific delay or frustration."
         reply = generate_dynamic_omkar_response(tracker, instruction)
         dispatcher.utter_message(text=reply)
         return wipe_collect_slots()
@@ -246,7 +237,7 @@ class ActionPrescribeRemedy(Action):
             remedy = response.text.strip()
         except Exception as e:
             # A fallback just in case the API times out
-            remedy = "Try wearing something blue on Wednesdays and spend 5 minutes facing east in the morning."
+            remedy = "default remedy response"
             
         # 4. Deliver the dynamic remedy
         dispatcher.utter_message(text=remedy)

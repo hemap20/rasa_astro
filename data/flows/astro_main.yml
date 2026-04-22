@@ -3,7 +3,6 @@ flows:
     description: "Start this flow whenever the user asks a question"
     steps:
       - action: utter_high_status_intro
-
       - id: astro_analysis_loop
         action: action_gemini_autonomous_analysis
         next:
@@ -20,23 +19,18 @@ flows:
   standard_flow:
     description: "Internal sub-flow for delivering relatable astrological insights. Do not start this flow directly; it is only triggered internally after the initial consultation."
     steps:
-      - action: action_gemini_barnum_flip
-      - collect: user_confirmation
       - action: action_process_astro_insight
       - collect: user_analysis_reply 
-      - link: empathatic_flow 
-
-  empathatic_flow:
-    description: "Internal sub-flow for providing emotional validation and reassurance. Do not start this flow directly; it is only triggered internally."
-    steps:
-      - action: utter_empathy_validation
-      - action: utter_calming_reassurance
-      - collect: user_analysis_reply
       - link: doctor_flow 
+
 
   doctor_flow:
     description: "Internal sub-flow for diagnosing astrological root causes and collecting symptoms. Start this flow after empathatic flow."
     steps:
+      - action: utter_empathy_validation
+      - action: utter_calming_reassurance
+      - action: action_gemini_barnum_flip
+      - collect: user_confirmation
       - action: action_collect_symptoms
       - collect: user_analysis_reply
       - action: action_explain_root_cause
