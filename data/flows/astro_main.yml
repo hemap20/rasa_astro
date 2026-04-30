@@ -1,54 +1,139 @@
 flows:
-  astro_consultation:
-    description: "Start this flow whenever the user asks a question"
+  astro_consultation_flow:
+    description: "High-engagement astrological consultation journey with layered narrative arc"
     steps:
       - action: utter_high_status_intro
+
+      # --- PHASE 1: AUTONOMOUS ANALYSIS (Entry) ---
       - id: astro_analysis_loop
         action: action_gemini_autonomous_analysis
         next:
           - if: slots.analysis_complete == true
-            then:
-              - link: standard_flow 
+            then: increment_loop_counter
           - else: wait_for_user_reply
 
+      # --- CORE INPUT ---
       - id: wait_for_user_reply
         collect: user_analysis_reply
-        description: "Collects the user's open-ended response."
-        next: astro_analysis_loop
+        description: "Collects the user's response."
+        next: increment_loop_counter
 
-  standard_flow:
-    description: "Internal sub-flow for delivering relatable astrological insights. Do not start this flow directly; it is only triggered internally after the initial consultation."
-    steps:
-      - action: action_process_astro_insight
-      - collect: user_analysis_reply 
-      - link: doctor_flow 
+      - id: increment_loop_counter
+        action: action_increment_loop_count
+        next: route_by_depth
+
+      - id: route_by_depth
+        action: action_route_by_depth 
+        next:
+          - if: slots.depth_phase == "discovery"     
+            then: discovery_phase
+          - if: slots.depth_phase == "deepening"    
+            then: deepening_phase
+          - if: slots.depth_phase == "narrative"  
+            then: narrative_phase
+          - else: discovery_phase
+
+      # ====================================================
+      # PHASE A: DISCOVERY (Iterations 1–2)
+      # Immediate burning question → Prediction → Remedy
+      # ====================================================
+      - id: discovery_phase
+        action: action_micro_validation        
+        next: provide_astro_insight
+
+      - id: provide_astro_insight
+        action: action_generate_astro_insight  
+        next: confirm_pattern
+
+      - id: confirm_pattern
+        action: action_barnum_diagnostic       
+        next: first_prediction
+
+      # - id: check_birth_data
+      #   action: action_check_birth_data        
+      #   next:
+      #     - if: slots.birth_time_known == false
+      #       then: photo_pivot
+      #     - else: first_prediction
+
+      # - id: photo_pivot
+      #   action: action_request_photo_pivot     
+      #   next: first_prediction
+
+      - id: first_prediction
+        action: action_balanced_prediction     
+        next: provide_timeline
+
+      - id: provide_timeline
+        action: action_benchmark_timeline      
+        next: diagnostic_follow_up
+
+      - id: diagnostic_follow_up
+        action: action_ask_diagnostic_choice
+        next: collect_diagnostic_choice
+
+      - id: collect_diagnostic_choice
+        collect: diagnostic_choice
+        next: specific_prediction
+
+      - id: specific_prediction
+        action: action_personalized_prediction   
+        next: deliver_remedy
+
+      - id: deliver_remedy
+        action: action_provide_ritual_remedy      
+        next: secret_revelation
 
 
-  doctor_flow:
-    description: "Internal sub-flow for diagnosing astrological root causes and collecting symptoms. Start this flow after empathatic flow."
-    steps:
-      - action: utter_empathy_validation
-      - action: utter_calming_reassurance
-      - action: action_gemini_barnum_flip
-      - collect: user_confirmation
-      - action: action_collect_symptoms
-      - collect: user_analysis_reply
-      - action: action_explain_root_cause
-      - collect: user_analysis_reply
-      - link: remedy_cycle 
 
-  remedy_cycle:
-    description: "Internal sub-flow for prescribing an astrological remedy and confirming the user's commitment. Start this flow after doctor flow."
-    steps:
-      - action: action_prescribe_remedy
-      - collect: user_confirmation
-      - action: utter_summary
-      - link: mystery_flow 
+      # ====================================================
+      # PHASE B: DEEPENING (Iterations 3–4)
+      # Shift from WHAT to WHY and HOW
+      # ====================================================
+      - id: deepening_phase
+        action: action_pattern_reinforcement
+        next: shadow_revelation
 
-  mystery_flow:
-    description: "Internal sub-flow for delivering a bold astrological prediction and creating a retention hook. Start this flow after remedy cycle."
-    steps:
-      - action: utter_pattern_breaker
-      - action: action_gemini_bold_prediction
-      - collect: acknowledged_warning
-      - action: utter_retention_hook_unfinished
+      - id: shadow_revelation
+        action: action_shadow_revelation
+        next: past_pattern_connection
+
+      - id: past_pattern_connection
+        action: action_connect_past_patterns
+        next: establish_authority
+      
+      - id: establish_authority
+        action: action_active_assurance
+        next: deepening_remedy
+
+      - id: deepening_remedy
+        action: action_provide_ritual_remedy      
+        next: wait_for_user_reply                 
+
+
+      # ====================================================
+      # PHASE C: NARRATIVE / MONITORING MODE (Iteration 5+)
+      # Stop predicting. Build the Return Hook.
+      # ====================================================
+      - id: narrative_phase
+        action: action_enter_monitoring_mode
+        next: benchmark_handover
+
+      - id: benchmark_handover
+        action: action_benchmark_handover
+        next: guardian_persona
+
+      - id: secret_revelation
+        action: action_retention_hook             
+        next: wait_for_user_reply                 
+      
+      - id: guardian_persona
+        action: action_guardian_persona
+        next: farewell_hook
+
+      - id: farewell_hook
+        action: action_active_assurance
+        next:
+          - if: slots.user_has_new_question == true
+            then: wait_for_user_reply             
+          - else: farewell_hook                   

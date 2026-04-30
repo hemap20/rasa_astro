@@ -1,0 +1,14 @@
+version: "3.1"
+
+nlu: []  
+
+intents:
+  - user_acknowledgement
+  - ask_question
+  - provide_birth_info
+  - express_urgency
+  - express_doubt
+  - express_gratitude
+  - new_topic
+  - emotional_response
+  - out_of_scope

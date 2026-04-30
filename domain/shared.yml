@@ -1,134 +1,108 @@
 version: "3.1"
 
-# Identity & Memory Layer
 slots:
+  # ── Collect input ──────────────────────────────────────────────────────────
   user_analysis_reply:
     type: text
     mappings:
       - type: from_llm
-
-  user_confirmation:
+  diagnostic_choice:
     type: text
     mappings:
       - type: from_llm
 
-  acknowledged_warning:
-    type: text
+  # ── Flow control ───────────────────────────────────────────────────────────
+  analysis_complete:
+    type: bool
     mappings:
-      - type: from_llm
-  user_id:
-    type: text
-    mappings:
-      - type: from_llm
-  user_name:
-    type: text
-    mappings:
-      - type: from_llm
-  
-  # Tracking frequency for personalization 
-  interaction_counter:
+      - type: controlled
+  loop_count:
     type: float
     initial_value: 0
     mappings:
-      - type: controlled 
+      - type: controlled
+  depth_phase:
+    type: text
+    mappings:
+      - type: controlled
+  birth_time_known:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+  monitoring_mode:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+  user_has_new_question:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: from_llm
 
-  # Storing specific pains and planetary context
+  # ── Astrological context ───────────────────────────────────────────────────
   current_pain_point:
     type: text
     mappings:
       - type: from_llm
 
-  # Managing the "Remedy Cycle"
-  active_remedy_name:
-    type: text
-    mappings:
-      - type: controlled
-  remedy_completed:
-    type: bool
-    initial_value: false
-    mappings:
-      - type: controlled
-
-  # Shuffling the "Logic Flow" (Standard, Doctor, Mystery)
-  logic_flow:
-    type: text
-    mappings:
-      - type: controlled
-  
-  entry_style:
-    type: text
-    mappings:
-      - type: controlled
-  
-  # Tracking if we just used a Pattern Breaker
-  last_pattern_breaker_turn:
-    type: float
-    initial_value: 0
-    mappings:
-      - type: controlled
-
-  # NEW SLOTS required by your flows
-  analysis_complete:
-    type: bool
-    mappings:
-      - type: controlled
-  
- 
-
 responses:
-  utter_ask_user_analysis_reply:
-    - text: "Take your time. Please tell me a bit more about what is going on."
-
-  # High-status but grounded and natural
   utter_high_status_intro:
-    - text: "Hello. I have your chart open right now. Let's take a look at what the planets are saying."
+    - text: "Radhe Radhe ji "
 
-  # Empathy first, Astrology second
-  utter_sympathy_first:
-    - text: "I can hear how stressful this is for you. Let's put the astrology aside for a second—take a deep breath. We will figure this out together."
+  # Collect-step prompts
+  utter_ask_user_analysis_reply:
+    - text: "Aapka issue kya hai"
+  utter_ask_diagnostic_choice:
+    - text: "Bahar se aa raha hai ya andar se?"
 
-  # Sudden Realization 
-  utter_pattern_breaker:
-    - text: "Wait a second... I am looking at your 8th house and seeing a very specific pattern. Did an older family member have a difficult time last year?"
-
-  # Retention Hooks
-  utter_retention_hook_unfinished:
-    - text: "There is actually a lot more shifting in your chart soon. The planets move into a new phase next Tuesday. Let's check back in then to see how things are going."
-  
-  utter_summary:
-    - text: "Just to make sure we are on the same page: your trouble with {current_pain_point} is tied to Saturn's current position, and you are going to try the remedy we discussed this Saturday. Does that sound right?"
-        
-  # NEW RESPONSES required by your flows
-  utter_ask_user_confirmation:
-    - text: "Sahi kaha?"
-  utter_ask_acknowledged_warning:
-    - text: "Kya aap sunne ke liye taiyaar hain jo sitare batate hain?"
-  utter_empathy_validation:
-    - text: "Main aapki pareshani samajh sakta hoon. Yeh samay thoda kathin zaroor hai."
-  utter_calming_reassurance:
-    - text: "Ghabrayiye mat. Grahon ka prabhav badalta rehta hai, hum iska samadhan nikalenge."
-  utter_retention_hook:
-    - text: "In upayon ko apnayen, aur agle mahine hum dobara chart dekhenge ki kya badlaav aaya hai."
-
-# Standard intents for micro-agreements
 intents:
+  - greeting
   - affirm
   - deny
   - inform_pain_point
   - ask_remedy_check
-  - express_distress 
+  - express_distress
+  - user_acknowledgement
+  - ask_question
+  - provide_birth_info
+  - express_urgency
+  - express_doubt
+  - express_gratitude
+  - new_topic
+  - emotional_response
+  - out_of_scope
 
-# ACTIONS BLOCK required by flows
 actions:
-  - action_select_logic_flow
+  # ── Entry ──────────────────────────────────────────────────────────────────
   - action_gemini_autonomous_analysis
-  - action_prescribe_remedy
-  - action_check_remedy
-  - action_gemini_barnum_flip
-  - action_process_astro_insight
-  - action_trigger_open_loop
-  - action_gemini_bold_prediction
-  - action_current_sky_justify
-  - action_collect_symptoms
-  - action_analyze_chart
-  - action_explain_root_cause
+
+  # ── Loop control ───────────────────────────────────────────────────────────
+  - action_increment_loop_count
+  - action_route_by_depth
+
+  # ── Phase A: Discovery (iterations 1–2) ───────────────────────────────────
+  - action_micro_validation
+  - action_generate_astro_insight
+  - action_barnum_diagnostic
+  - action_check_birth_data
+  - action_request_photo_pivot
+  - action_balanced_prediction
+  - action_ask_diagnostic_choice
+  - action_benchmark_timeline
+  - action_personalized_prediction
+  - action_active_assurance
+  - action_provide_ritual_remedy
+  - action_retention_hook
+  # - action_diagnostic_choice
+
+  # ── Phase B: Deepening (iterations 3–4) ───────────────────────────────────
+  - action_pattern_reinforcement
+  - action_shadow_revelation
+  - action_connect_past_patterns
+
+  # ── Phase C: Narrative / Monitoring (iteration 5+) ────────────────────────
+  - action_enter_monitoring_mode
+  - action_benchmark_handover
+  - action_guardian_persona

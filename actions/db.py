@@ -1,14 +1,21 @@
 import os
 import shutil
 import tempfile
-from typing import Any, List
-from typing import Optional, List, Dict
+from typing import Any, Optional, List, Dict
 from pydantic import Field
 
+import json
 from pydantic import BaseModel
 
-from rasa.nlu.utils import write_json_to_file
-from rasa.shared.utils.io import read_json_file
+
+def read_json_file(path: str) -> Any:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_json_to_file(path: str, data: Any) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 ORIGIN_DB_PATH = "db"
 USER_PROFILES = "user_profiles.json"

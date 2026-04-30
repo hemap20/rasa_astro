@@ -8,8 +8,10 @@ pipeline:
       model_group: gemini
     # prompt_template: prompts/command_generator.jinja2
     flow_retrieval:
-        embeddings:
-          model_group: gemini_embeddings
+      embeddings:
+        model_group: gemini_embeddings
+  - name: "components.gemini_nlu.GeminiNLUComponent"
+    gemini_api_key: ${GEMINI_API_KEY}
 
 policies:
   - name: FlowPolicy
