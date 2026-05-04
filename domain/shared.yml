@@ -41,6 +41,16 @@ slots:
     mappings:
       - type: from_llm
 
+  # ── Intent routing ────────────────────────────────────────────────────────
+  next_action_intent:
+    type: text
+    mappings:
+      - type: custom
+  depth_change_signal:
+    type: text
+    mappings:
+      - type: custom
+
   # ── Astrological context ───────────────────────────────────────────────────
   current_pain_point:
     type: text
@@ -51,11 +61,10 @@ responses:
   utter_high_status_intro:
     - text: "Radhe Radhe ji "
 
-  # Collect-step prompts
   utter_ask_user_analysis_reply:
     - text: "Aapka issue kya hai"
   utter_ask_diagnostic_choice:
-    - text: "Bahar se aa raha hai ya andar se?"
+    - text: ""
 
 intents:
   - greeting
@@ -89,7 +98,7 @@ actions:
   - action_check_birth_data
   - action_request_photo_pivot
   - action_balanced_prediction
-  - action_ask_diagnostic_choice
+  - action_generate_diagnostic_question
   - action_benchmark_timeline
   - action_personalized_prediction
   - action_active_assurance
@@ -106,3 +115,10 @@ actions:
   - action_enter_monitoring_mode
   - action_benchmark_handover
   - action_guardian_persona
+
+  # ── Dynamic intent routing ─────────────────────────────────────────────────
+  - action_classify_user_intent
+  - action_acknowledge_topic_switch
+  - action_clarify_last_response
+  - action_handle_crisis
+  - action_handle_depth_request

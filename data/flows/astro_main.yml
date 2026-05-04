@@ -12,83 +12,105 @@ flows:
             then: increment_loop_counter
           - else: wait_for_user_reply
 
-      # --- CORE INPUT ---
+      # --- CORE INPUT + INTENT CLASSIFICATION ---
       - id: wait_for_user_reply
         collect: user_analysis_reply
         description: "Collects the user's response."
-        next: increment_loop_counter
+        next: classify_intent
 
+      - id: classify_intent
+        action: action_classify_user_intent
+        next:
+          - if: "slots.next_action_intent == 'crisis_distress'"
+            then: shortcut_crisis
+          - if: "slots.next_action_intent == 'ask_farewell'"
+            then: farewell_hook
+          - if: "slots.next_action_intent == 'new_topic'"
+            then: topic_switch_step
+          - if: "slots.next_action_intent == 'request_clarification'"
+            then: shortcut_clarification
+          - if: "slots.next_action_intent == 'request_depth_change'"
+            then: depth_change_step
+          - else: increment_loop_counter
+
+      # --- True shortcuts (can't be absorbed into phase via AAA) ---
+      - id: shortcut_crisis
+        action: action_handle_crisis
+        next: wait_for_user_reply
+
+      - id: shortcut_clarification
+        action: action_clarify_last_response
+        next: wait_for_user_reply
+
+      - id: topic_switch_step
+        action: action_acknowledge_topic_switch
+        next: astro_analysis_loop
+
+      - id: depth_change_step
+        action: action_handle_depth_request
+        next:
+          - if: "slots.depth_change_signal == 'deeper'"
+            then: increment_loop_counter
+          - else: wait_for_user_reply
+
+      # --- Everything else flows into phases with AAA absorbed ---
       - id: increment_loop_counter
         action: action_increment_loop_count
         next: route_by_depth
 
       - id: route_by_depth
-        action: action_route_by_depth 
+        action: action_route_by_depth
         next:
-          - if: slots.depth_phase == "discovery"     
+          - if: slots.depth_phase == "discovery"
             then: discovery_phase
-          - if: slots.depth_phase == "deepening"    
+          - if: slots.depth_phase == "deepening"
             then: deepening_phase
-          - if: slots.depth_phase == "narrative"  
+          - if: slots.depth_phase == "narrative"
             then: narrative_phase
           - else: discovery_phase
 
       # ====================================================
       # PHASE A: DISCOVERY (Iterations 1–2)
-      # Immediate burning question → Prediction → Remedy
       # ====================================================
       - id: discovery_phase
-        action: action_micro_validation        
+        action: action_micro_validation
         next: provide_astro_insight
 
       - id: provide_astro_insight
-        action: action_generate_astro_insight  
-        next: confirm_pattern
-
-      - id: confirm_pattern
-        action: action_barnum_diagnostic       
-        next: first_prediction
-
-      # - id: check_birth_data
-      #   action: action_check_birth_data        
-      #   next:
-      #     - if: slots.birth_time_known == false
-      #       then: photo_pivot
-      #     - else: first_prediction
-
-      # - id: photo_pivot
-      #   action: action_request_photo_pivot     
-      #   next: first_prediction
-
-      - id: first_prediction
-        action: action_balanced_prediction     
+        action: action_generate_astro_insight
         next: provide_timeline
 
+      # - id: confirm_pattern
+      #   action: action_barnum_diagnostic
+      #   next: provide_timeline
+
+      # - id: first_prediction
+      #   action: action_balanced_prediction
+      #   next: provide_timeline
+
       - id: provide_timeline
-        action: action_benchmark_timeline      
+        action: action_benchmark_timeline
         next: diagnostic_follow_up
 
       - id: diagnostic_follow_up
-        action: action_ask_diagnostic_choice
+        action: action_generate_diagnostic_question
         next: collect_diagnostic_choice
 
       - id: collect_diagnostic_choice
         collect: diagnostic_choice
+        ask_before_filling: false
         next: specific_prediction
 
       - id: specific_prediction
-        action: action_personalized_prediction   
+        action: action_personalized_prediction
         next: deliver_remedy
 
       - id: deliver_remedy
-        action: action_provide_ritual_remedy      
+        action: action_provide_ritual_remedy
         next: secret_revelation
-
-
 
       # ====================================================
       # PHASE B: DEEPENING (Iterations 3–4)
-      # Shift from WHAT to WHY and HOW
       # ====================================================
       - id: deepening_phase
         action: action_pattern_reinforcement
@@ -101,19 +123,17 @@ flows:
       - id: past_pattern_connection
         action: action_connect_past_patterns
         next: establish_authority
-      
+
       - id: establish_authority
         action: action_active_assurance
         next: deepening_remedy
 
       - id: deepening_remedy
-        action: action_provide_ritual_remedy      
-        next: wait_for_user_reply                 
-
+        action: action_provide_ritual_remedy
+        next: wait_for_user_reply
 
       # ====================================================
-      # PHASE C: NARRATIVE / MONITORING MODE (Iteration 5+)
-      # Stop predicting. Build the Return Hook.
+      # PHASE C: NARRATIVE / MONITORING (Iteration 5+)
       # ====================================================
       - id: narrative_phase
         action: action_enter_monitoring_mode
@@ -124,9 +144,9 @@ flows:
         next: guardian_persona
 
       - id: secret_revelation
-        action: action_retention_hook             
-        next: wait_for_user_reply                 
-      
+        action: action_retention_hook
+        next: wait_for_user_reply
+
       - id: guardian_persona
         action: action_guardian_persona
         next: farewell_hook
@@ -135,5 +155,5 @@ flows:
         action: action_active_assurance
         next:
           - if: slots.user_has_new_question == true
-            then: wait_for_user_reply             
-          - else: farewell_hook                   
+            then: wait_for_user_reply
+          - else: farewell_hook

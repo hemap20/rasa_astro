@@ -10,7 +10,7 @@ model = genai.GenerativeModel("gemini-2.5-flash")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helpers
+# Core helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_conversation_history(tracker: Tracker, n: int = 10) -> str:
@@ -37,18 +37,16 @@ Output guardrails — never do any of the following:
 def generate_omkar_response(tracker: Tracker, instruction: str) -> str:
     history = get_conversation_history(tracker)
     prompt = f"""
-You are Omkar, an Indian astrologer texting a person. Casual, warm, direct, yet polite. 
+You are Omkar, an Indian astrologer texting a person. Casual, warm, direct, yet polite.
 
 LANGUAGE — strict rules:
 - Write like you are texting, not writing an essay.
 - Mix Hindi and English naturally
-- FORBIDDEN words: gochar, kundali mein grahon ki sthiti, kaabil, mehnat, raasta, uljhan, vishay,
-  charcha, sthiti, prabhav (use "effect" instead)
 - NO formal Hindi. make it sound like a normal casual conversation, not a pandit reading from a book.
 
 LENGTH — strict rules:
 - MAXIMUM 2 short sentences. Often 1 is enough.
-- Each sentence under 7 words.
+- Each sentence under 5 words.
 
 CONVERSATION RULES:
 - NEVER ask a vague open-ended question like "kya chal raha hai?" — ask something SPECIFIC.
@@ -70,11 +68,107 @@ OUTPUT ONLY OMKAR'S RESPONSE. No labels, no script, no explanation.
 
 
 def wipe_collect_slots() -> List[Dict]:
-    """Reset all collect slots so the next collect step always pauses for input."""
+    """Reset collect slots so the next collect step always pauses for input."""
     return [
         SlotSet("user_analysis_reply", None),
         SlotSet("diagnostic_choice", None),
     ]
+
+
+def clear_signal() -> List[Dict]:
+    """Clear the intent signal after a phase action has consumed it."""
+    return [SlotSet("next_action_intent", None)]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Acknowledge-Absorb-Advance (AAA) pattern
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SIGNAL_INSTRUCTIONS = {
+    "wants_remedy": (
+        "The user is asking for a remedy. "
+        "ACKNOWLEDGE their ask in one warm phrase. "
+        "ABSORB by giving a brief tease or preview of a remedy direction. "
+        "ADVANCE by weaving back into the reading — frame the full remedy as more powerful "
+        "once this part of the reading is complete."
+    ),
+    "wants_prediction": (
+        "The user wants to know what will happen. "
+        "ACKNOWLEDGE their curiosity or hope. "
+        "ABSORB by giving one directional signal — not a guarantee, just a lean. "
+        "ADVANCE the reading — the clearer picture is emerging as you go deeper."
+    ),
+    "wants_timeline": (
+        "The user is asking about timing. "
+        "ACKNOWLEDGE their impatience or hope. "
+        "ABSORB by naming a rough window — specific enough to feel real. "
+        "ADVANCE — frame the exact timing as something sharpening as the reading continues."
+    ),
+    "wants_insight": (
+        "The user wants to understand why something is happening. "
+        "ACKNOWLEDGE the question. "
+        "ABSORB with one specific astrological reason tied to their situation. "
+        "ADVANCE the reading naturally."
+    ),
+    "express_doubt": (
+        "The user is sceptical or doesn't believe what you said. "
+        "ACKNOWLEDGE their doubt — validate it, do not fight it. "
+        "ABSORB by offering one very specific detail that gives them reason to stay open. "
+        "ADVANCE as if their scepticism itself was something you were already seeing in their chart."
+    ),
+    "revisit_topic": (
+        "The user wants to revisit something from earlier in the conversation. "
+        "ACKNOWLEDGE it by briefly naming what they are referring to. "
+        "ABSORB by connecting it to what is happening right now — show it as related, not separate. "
+        "ADVANCE the reading, framing the connection as deepening it."
+    ),
+    "express_distress": (
+        "The user is upset, frustrated, or emotionally overwhelmed. "
+        "ACKNOWLEDGE their feeling first — warmly, briefly, without drama. "
+        "ABSORB by grounding them with one steady, calm observation. "
+        "ADVANCE the reading — name their distress as something you were already seeing, "
+        "which makes it feel understood rather than alarming."
+    ),
+    "reject_remedy": (
+        "The user has said they cannot or will not do the remedy you gave. "
+        "ACKNOWLEDGE without any judgment — this is completely fine. "
+        "ABSORB by offering a simpler, faster alternative in one line. "
+        "ADVANCE the reading — this adjustment is normal and the consultation continues."
+    ),
+    "remedy_feedback": (
+        "The user is reporting back on a remedy they already tried. "
+        "ACKNOWLEDGE their effort — they followed through. "
+        "ABSORB by interpreting the result, positive or not, as a meaningful signal from the planets. "
+        "ADVANCE the reading using their feedback as new information that deepens what you see."
+    ),
+    "request_depth_change": (
+        "The user is signalling they want to go deeper or slow down. "
+        "ACKNOWLEDGE their signal naturally. "
+        "ABSORB by confirming you heard them — if deeper, build a moment of anticipation; "
+        "if slower, offer calm reassurance that there is no rush. "
+        "ADVANCE into whatever comes next."
+    ),
+    "other": (
+        "The user said something unclear or unexpected. "
+        "ACKNOWLEDGE it warmly without pretending you fully understood. "
+        "ABSORB with a grounding observation that keeps the tone steady. "
+        "ADVANCE the reading naturally, steering back to what matters."
+    ),
+}
+
+
+def build_instruction(tracker: Tracker, base_instruction: str) -> str:
+    """Prepend AAA pattern prefix to a phase action's base instruction if a signal is set."""
+    signal = tracker.get_slot("next_action_intent") or "in_flow"
+    prefix = _SIGNAL_INSTRUCTIONS.get(signal, "")
+    if prefix:
+        return (
+            f"RESPOND USING THE ACKNOWLEDGE-ABSORB-ADVANCE PATTERN:\n"
+            f"{prefix}\n\n"
+            f"Your base task for this step (do this as the ADVANCE):\n"
+            f"{base_instruction}"
+        )
+    return base_instruction
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -102,15 +196,15 @@ Decide if you understand the user's core problem (job, relationship, health, etc
 
 Special cases:
 - If the user just said a greeting ("hi", "hello", "namaste") with no problem stated → STATUS: INCOMPLETE,
-  MESSAGE: ask casually what brings them here today
+  MESSAGE: greet them back and ask them what brings them here
 - If the user said something vague or short with no clear problem → STATUS: INCOMPLETE,
-  MESSAGE: ask one follow-up question to know their situation better
+  MESSAGE: ask one follow-up question narrow down the category which they want to explore
 
 Return EXACTLY in the format below, nothing else:
 
 STATUS: <INCOMPLETE | COMPLETE>
 MESSAGE: <If INCOMPLETE: one short casual Hinglish question to understand their problem.
-          If COMPLETE: one short warm acknowledgement then say you are checking the stars.>
+          If COMPLETE: Empty>
 
 {_OUTPUT_GUARDRAILS}
 """
@@ -159,7 +253,7 @@ class ActionRouteByDepth(Action):
             phase = "deepening"
         else:
             phase = "narrative"
-        return [SlotSet("depth_phase", phase)]
+        return [SlotSet("depth_phase", phase), SlotSet("depth_change_signal", None)]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -171,12 +265,12 @@ class ActionMicroValidation(Action):
         return "action_micro_validation"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "The user just shared their core problem. Empathize briefly and acknowledge their "
             "core anxiety in a warm, grounded way. Make them feel heard without being dramatic."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return []
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal()
 
 
 class ActionGenerateAstroInsight(Action):
@@ -184,12 +278,13 @@ class ActionGenerateAstroInsight(Action):
         return "action_generate_astro_insight"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Connect the user's pain point to a specific astrological influence "
-            "and explain briefly how it is affecting their situation right now. Keep it very specifc and believable"
+            "and explain briefly how it is affecting their situation right now. "
+            "Keep it very specific and believable."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return []
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal()
 
 
 class ActionBarnumDiagnostic(Action):
@@ -197,12 +292,12 @@ class ActionBarnumDiagnostic(Action):
         return "action_barnum_diagnostic"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Make a Barnum-style observation that sounds deeply personal to the user's pain point "
             "but is broadly true for most people in their situation. Phrase it as a soft confirming question."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return []
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal()
 
 
 class ActionCheckBirthData(Action):
@@ -245,13 +340,13 @@ class ActionBalancedPrediction(Action):
         return "action_balanced_prediction"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Give a balanced prediction that addresses both their INTENT (what they want) "
             "and their FEELING (what they fear). The stars show they have the capability, "
             "but there is a timing window. Hopeful but grounded — a direction, not a guarantee."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return []
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal()
 
 
 class ActionBenchmarkTimeline(Action):
@@ -259,27 +354,27 @@ class ActionBenchmarkTimeline(Action):
         return "action_benchmark_timeline"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Give a concrete conditional timeline: a specific number of days or weeks, "
             "a condition the user must meet, and one measurable sign of change to watch for. "
             "The condition and sign must come from what the user actually shared — nothing generic."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return []
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal()
 
 
 class ActionAskDiagnosticChoice(Action):
     def name(self) -> Text:
-        return "action_ask_diagnostic_choice"
+        return "action_generate_diagnostic_question"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Ask the user one short follow up question related to the pain point they have mentioned "
-            "to get to know their situation" 
-            "and which will help in giving a more personalised prediction"
+            "to get to know their situation better, "
+            "which will help in giving a more personalised prediction."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return []
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal()
 
 
 class ActionPersonalizedPrediction(Action):
@@ -287,14 +382,14 @@ class ActionPersonalizedPrediction(Action):
         return "action_personalized_prediction"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Identify a recurring theme or pattern in the user's situation based on conversation history. "
             "Reference something the user said earlier to make it feel personal. Connect their current "
             "situation to a larger karmic or planetary story — help them understand WHY this keeps "
             "happening, not just what is happening."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return []
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal()
 
 
 class ActionActiveAssurance(Action):
@@ -302,14 +397,14 @@ class ActionActiveAssurance(Action):
         return "action_active_assurance"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Give a warm, reassuring statement that shows you are actively doing something "
             "on the user's behalf — performing a puja, keeping their situation in your prayers, "
             "or channelling positive energy. Do NOT promise outcomes. "
             "Sound like a caring elder working quietly in the background. One short Hinglish sentence."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return wipe_collect_slots()
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal() + wipe_collect_slots()
 
 
 class ActionProvideRitualRemedy(Action):
@@ -324,12 +419,17 @@ class ActionProvideRitualRemedy(Action):
             if monitoring_mode
             else "immediate practical relief"
         )
+        signal = tracker.get_slot("next_action_intent") or "in_flow"
+        aaa_prefix = ""
+        if signal in _SIGNAL_INSTRUCTIONS:
+            aaa_prefix = f"ACKNOWLEDGE-ABSORB-ADVANCE:\n{_SIGNAL_INSTRUCTIONS[signal]}\n\n"
+
         prompt = f"""You are Omkar, a grounded Vedic astrologer. Speak in simple Hinglish (latin script).
 
             Recent conversation:
             {history}
 
-            TASK: Design ONE complete remedy as {framing}, tailored to the user's specific situation.
+            {aaa_prefix}TASK: Design ONE complete remedy as {framing}, tailored to the user's specific situation.
 
             A good remedy has three parts — include all three:
 
@@ -342,27 +442,28 @@ class ActionProvideRitualRemedy(Action):
             3. OBSERVABLE SIGN: One real-world signal relevant to their situation that confirms the remedy is working
             (e.g., a shift in someone's tone, a dream, an unexpected call, a feeling of lightness).
 
-            Rules: Maximum 3 short sentences total. Natural and grounded. No heavy jargon. Use the examples as only the guide. 
+            Rules: Maximum 3 short sentences total. Natural and grounded. No heavy jargon.
             {_OUTPUT_GUARDRAILS}"""
         try:
             remedy = model.generate_content(prompt).text.replace("\n", " ").strip()
         except Exception:
             remedy = "fallback remedy"
         dispatcher.utter_message(text=remedy)
-        return wipe_collect_slots()
+        return clear_signal() + wipe_collect_slots()
+
 
 class ActionRetentionHook(Action):
     def name(self) -> Text:
         return "action_retention_hook"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Create a soft cliffhanger — tell the user you just noticed something specific "
             "in their Venus or 7th house that you weren't expecting. Don't reveal it yet. "
             "Make them curious to come back. Make it sound non-chalant in one short sentence, natural Hinglish."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return wipe_collect_slots()
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal() + wipe_collect_slots()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -374,17 +475,16 @@ class ActionPatternReinforcement(Action):
         return "action_pattern_reinforcement"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Identify the recurring cycle in the user's life based on what they have shared. "
-            "Frame it as a time-based pattern — something that has happened before and is repeating now "
+            "Frame it as a time-based pattern — something that has happened before and is repeating now. "
             "For career: frame setbacks as a timing delay, not a lack of skill. "
             "For relationships: frame mixed signals as internal conflict in the other person, not rejection. "
             "For family: frame interference as a boundary being tested, not malice. "
             "Name the planetary force behind this cycle. Do not moralize — stay observational."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return []
-
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal()
 
 
 class ActionShadowRevelation(Action):
@@ -392,14 +492,14 @@ class ActionShadowRevelation(Action):
         return "action_shadow_revelation"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "While examining their chart, reveal a secondary influence you just noticed — "
             "something about a close family member or unexplained recent tiredness. "
             "Frame it as 'Main yeh mention karne waala nahi tha, lekin...' "
             "Make it feel like a genuine mid-reading discovery. End with one soft confirming question."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return []
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal()
 
 
 class ActionConnectPastPatterns(Action):
@@ -407,15 +507,15 @@ class ActionConnectPastPatterns(Action):
         return "action_connect_past_patterns"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Connect the user's current struggles to a deeper karmic or past pattern. "
             "If they asked about job earlier and love now, show how both stem from the same fear "
             "or planetary influence. Make them see it as one unified life lesson, not separate problems. "
             "Reference specific details they shared earlier. End with a reframe that feels liberating, "
             "not heavy."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return wipe_collect_slots()
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal() + wipe_collect_slots()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -427,14 +527,14 @@ class ActionEnterMonitoringMode(Action):
         return "action_enter_monitoring_mode"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Signal a shift in the consultation — the active advice phase is over and you "
             "are now entering a quiet watch period. Communicate this without drama: you have "
             "seen what you needed to see, the remedy is in motion, and you are keeping an eye "
             "on how things unfold for them. Calm, confident, unhurried."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return [SlotSet("monitoring_mode", True)] + wipe_collect_slots()
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return [SlotSet("monitoring_mode", True)] + clear_signal() + wipe_collect_slots()
 
 
 class ActionBenchmarkHandover(Action):
@@ -442,15 +542,15 @@ class ActionBenchmarkHandover(Action):
         return "action_benchmark_handover"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Give the user a clear, time-bound observation task based on their specific situation. "
             "Tell them: how many days to observe, what behaviour to adopt during that time, "
             "and one concrete sign in their real world that would indicate the energy is shifting. "
             "The sign must be specific to their situation — not generic. "
             "End by asking them to come back when they notice it."
         )
-        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return wipe_collect_slots()
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal() + wipe_collect_slots()
 
 
 class ActionGuardianPersona(Action):
@@ -458,12 +558,189 @@ class ActionGuardianPersona(Action):
         return "action_guardian_persona"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        instruction = (
+        base = (
             "Speak as a quiet guardian who is done advising and is now simply present. "
             "Acknowledge that the work has been done, and that you are doing your part in "
             "the background (puja, prayers, attention). "
             "Gently invite them to share anything new, or to simply rest and let things unfold. "
             "No urgency, no follow-up questions — just warm, open presence."
         )
+        dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
+        return clear_signal() + wipe_collect_slots()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Intent Classifier
+# ─────────────────────────────────────────────────────────────────────────────
+
+_INTENT_LABELS = [
+    "in_flow",
+    "wants_remedy",
+    "wants_prediction",
+    "wants_timeline",
+    "wants_insight",
+    "express_doubt",
+    "new_topic",
+    "revisit_topic",
+    "express_distress",
+    "ask_farewell",
+    "reject_remedy",
+    "remedy_feedback",
+    "request_clarification",
+    "crisis_distress",
+    "request_depth_change",
+    "other",
+]
+
+_INTENT_DESCRIPTIONS = """
+- in_flow: user is continuing the consultation normally
+- wants_remedy: user asks for a mantra, ritual, or what to do
+- wants_prediction: user asks what will happen, outcome, future
+- wants_timeline: user asks when, how long, or time-bound questions
+- wants_insight: user asks why, about planetary influence, or astrological reason
+- express_doubt: user is sceptical, doesn't believe, or questions accuracy
+- new_topic: user shifts to a completely different life area (career → relationship, etc.)
+- revisit_topic: user wants to go back to something discussed earlier
+- express_distress: user is frustrated, upset, or mildly emotional
+- ask_farewell: user wants to end or pause the conversation
+- reject_remedy: user says they cannot or will not do the prescribed remedy
+- remedy_feedback: user reports back on a remedy they already tried
+- request_clarification: user asks the bot to explain its own previous message
+- crisis_distress: severe emotional escalation — crisis language, self-harm, hopelessness
+- request_depth_change: user signals pacing — "aur batao" (go deeper) or "bass/ruk jao" (slow down/stop)
+- other: unclear, unrecognised, or ambiguous input that doesn't fit any above
+"""
+
+
+class ActionClassifyUserIntent(Action):
+    def name(self) -> Text:
+        return "action_classify_user_intent"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
+        history = get_conversation_history(tracker, n=5)
+        user_text = tracker.latest_message.get("text", "")
+        prompt = f"""You are classifying a user message in a Hinglish astrology chatbot conversation.
+
+Recent conversation:
+{history}
+
+User's latest message: "{user_text}"
+
+Classify the user's message into EXACTLY ONE of these intents:
+{_INTENT_DESCRIPTIONS}
+
+Reply with ONLY the intent label, nothing else. No explanation, no punctuation.
+Valid labels: {', '.join(_INTENT_LABELS)}"""
+        try:
+            label = model.generate_content(prompt).text.strip().lower().split()[0]
+            if label not in _INTENT_LABELS:
+                label = "other"
+        except Exception:
+            label = "in_flow"
+        return [SlotSet("next_action_intent", label)] + wipe_collect_slots()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Genuine shortcut handlers (can't be absorbed into phase via AAA)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ActionAcknowledgeTopicSwitch(Action):
+    def name(self) -> Text:
+        return "action_acknowledge_topic_switch"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
+        instruction = (
+            "The user has shifted to a new topic. Acknowledge this smoothly in one casual Hinglish "
+            "sentence — make it feel natural, not like a reset. Do not ask a question."
+        )
         dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
-        return wipe_collect_slots()
+        return [
+            SlotSet("loop_count", 0),
+            SlotSet("depth_phase", None),
+            SlotSet("analysis_complete", False),
+            SlotSet("next_action_intent", None),
+        ] + wipe_collect_slots()
+
+
+class ActionClarifyLastResponse(Action):
+    def name(self) -> Text:
+        return "action_clarify_last_response"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
+        last_bot_message = ""
+        for event in reversed(tracker.events):
+            if event.get("event") == "bot" and event.get("text"):
+                last_bot_message = event.get("text", "")
+                break
+
+        instruction = (
+            f"The user didn't understand what you just said: \"{last_bot_message}\". "
+            "Re-explain the same idea in simpler, more everyday Hinglish. "
+            "Use a relatable analogy if it helps. Keep it to one sentence."
+        )
+        dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
+        return [SlotSet("next_action_intent", None)] + wipe_collect_slots()
+
+
+class ActionHandleCrisis(Action):
+    def name(self) -> Text:
+        return "action_handle_crisis"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
+        prompt = """You are Omkar, responding to someone who seems to be in genuine distress or crisis.
+
+Do NOT give astrological advice right now.
+Do NOT continue the consultation.
+
+Your response must:
+1. Acknowledge their pain with genuine warmth — not script, not formula
+2. Tell them they are not alone
+3. Gently suggest they speak to someone they trust or a helpline if things feel very heavy
+
+Write 2 short Hinglish sentences. Warm, human, no astrology.
+
+OUTPUT ONLY OMKAR'S RESPONSE."""
+        try:
+            response = model.generate_content(prompt).text.replace("\n", " ").strip()
+        except Exception:
+            response = "Aap akele nahi hain. Kisi apne se baat karein, ya iCall helpline pe call karein: 9152987821."
+        dispatcher.utter_message(text=response)
+        return [SlotSet("next_action_intent", None)] + wipe_collect_slots()
+
+
+class ActionHandleDepthRequest(Action):
+    def name(self) -> Text:
+        return "action_handle_depth_request"
+
+    def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
+        user_text = tracker.latest_message.get("text", "").lower()
+        slower_signals = ["bass", "ruk", "stop", "enough", "bas", "thoda ruk", "wait", "pause"]
+
+        if any(s in user_text for s in slower_signals):
+            signal = "slower"
+            instruction = (
+                "The user wants to slow down or pause. Acknowledge this calmly — "
+                "tell them there is no rush and you are here when they are ready. "
+                "One warm short Hinglish sentence."
+            )
+            dispatcher.utter_message(text=generate_omkar_response(tracker, instruction))
+            return [
+                SlotSet("depth_change_signal", signal),
+                SlotSet("next_action_intent", None),
+            ] + wipe_collect_slots()
+        else:
+            # Advance loop_count to threshold of next phase, let phase action do AAA via request_depth_change signal
+            count = float(tracker.get_slot("loop_count") or 0)
+            current_phase = tracker.get_slot("depth_phase") or "discovery"
+            if current_phase == "discovery":
+                new_count = 3.0
+            elif current_phase == "deepening":
+                new_count = 5.0
+            else:
+                new_count = count
+
+            return [
+                SlotSet("depth_change_signal", "deeper"),
+                SlotSet("loop_count", new_count),
+                # keep next_action_intent = 'request_depth_change' so phase action does AAA
+            ] + wipe_collect_slots()
