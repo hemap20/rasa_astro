@@ -16,33 +16,55 @@ class GeminiNLUComponent(Component):
     name = "GeminiNLUComponent"
 
     SYSTEM_PROMPT = """
-    You are an NLU engine for an astrology chatbot.
+    You are an NLU engine for a Jyotish AI astrology chatbot.
     Users speak in Hindi, Hinglish, or English. Messages are short and informal.
 
     Your job: Given a user message, return a JSON object with:
-    - "intent": one of [greeting, user_acknowledgement, ask_question, provide_birth_info, 
-                        express_urgency, express_doubt, express_gratitude, 
-                        new_topic, emotional_response, out_of_scope]
+    - "intent": one of [
+        greeting, user_acknowledgement, ask_question, provide_birth_info,
+        express_urgency, express_doubt, express_gratitude,
+        new_topic, emotional_response, out_of_scope,
+        share_love_concern, share_career_concern, share_family_concern,
+        share_marriage_concern, ask_open_general, ask_specific_question,
+        share_new_update, ask_remedy, confirm_remedy_done, topic_change,
+        goodbye, returning_user, affirm, deny, inform_pain_point,
+        ask_remedy_check, express_distressx
+      ]
     - "confidence": float between 0 and 1
     - "entities": list of {entity, value} objects if any (e.g. name, date, problem_type)
     - "sentiment": one of [positive, neutral, negative, distressed]
 
     Rules:
-    - Any form of greeting "hello" "namaste" "hi = greeting
-    - Short replies like "ok", "hmm", "P", "??", "👍", "theek" = user_acknowledgement
-    - Questions about love, job, money, health = ask_question
+    - "hello", "namaste", "hi", "Radhe Radhe" = greeting
+    - Short replies like "ok", "hmm", "P", "??", "👍", "theek", "haan", "accha" = user_acknowledgement
+    - "haan", "yes", "bilkul", "sahi hai" = affirm
+    - "nahi", "no", "nope", "galat" = deny
     - Sharing birth date/time/place = provide_birth_info
-    - "jaldi bata", "urgent hai" = express_urgency
-    - Doubt or disbelief = express_doubt
-    - "shukriya", "thank you", "bahut acha" = express_gratitude
-    - Switching to a completely new problem = new_topic
-    - Crying, fear, hopelessness = emotional_response
-    - Anything unrelated to astrology = out_of_scope
+    - "jaldi bata", "urgent hai", "please jaldi" = express_urgency
+    - Doubt or disbelief about prediction = express_doubt
+    - "shukriya", "thank you", "bahut acha", "thanks" = express_gratitude
+    - Love/relationship problems (boyfriend, girlfriend, husband, wife, ex) = share_love_concern
+    - Job, business, money, career problems = share_career_concern
+    - Family conflict, parents, siblings = share_family_concern
+    - Marriage, shaadi, rishta, divorce = share_marriage_concern
+    - Open ended "kya hoga mera?", "future batao" with no specific topic = ask_open_general
+    - Specific question about timing, outcome, prediction = ask_specific_question
+    - User sharing a new development or update about their situation = share_new_update
+    - Asking for remedy, totka, upay, solution = ask_remedy
+    - Confirming they did the remedy = confirm_remedy_done
+    - Switching to a completely different topic = topic_change
+    - "bye", "ok theek hai", "band karo", farewell = goodbye
+    - User mentions they talked before, came back, "pehle bhi aaya tha" = returning_user
+    - Explicitly describing their pain point or problem in detail = inform_pain_point
+    - Asking if a remedy will work, checking remedy status = ask_remedy_check
+    - Deep emotional distress, crying, fear, despair = express_distress
+    - Strong negative emotion but not necessarily distress = emotional_response
+    - Anything unrelated to astrology/relationships/life problems = out_of_scope
 
     Respond ONLY with valid JSON. No explanation.
 
     Example output:
-    {"intent": "ask_question", "confidence": 0.95, "entities": [{"entity": "problem_type", "value": "marriage"}], "sentiment": "distressed"}
+    {"intent": "share_love_concern", "confidence": 0.95, "entities": [{"entity": "person_name", "value": "Rahul"}, {"entity": "relationship_type", "value": "ex"}], "sentiment": "distressed"}
     """
 
     def __init__(self, config, model_storage, resource, execution_context):

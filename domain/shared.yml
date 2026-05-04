@@ -1,61 +1,255 @@
 version: "3.1"
 
 slots:
-  # ── Collect input ──────────────────────────────────────────────────────────
+  # ── Primary input (collect step target) ────────────────────────────────────
   user_analysis_reply:
     type: text
     mappings:
       - type: from_llm
-  diagnostic_choice:
+
+  # ── User profile ──────────────────────────────────────────────────────────
+  user_name:
     type: text
     mappings:
       - type: from_llm
 
-  # ── Flow control ───────────────────────────────────────────────────────────
-  analysis_complete:
-    type: bool
+  user_dob:
+    type: text
+    mappings:
+      - type: from_llm
+
+  # ── Topic ─────────────────────────────────────────────────────────────────
+  topic:
+    type: categorical
+    values:
+      - love
+      - career
+      - family
+      - marriage
+      - health
+      - general
     mappings:
       - type: controlled
-  loop_count:
+
+  # ── Person of interest ────────────────────────────────────────────────────
+  person_name:
+    type: text
+    mappings:
+      - type: from_llm
+
+  person_dob:
+    type: text
+    mappings:
+      - type: from_llm
+
+  relationship_type:
+    type: categorical
+    values:
+      - partner
+      - ex
+      - spouse
+      - family
+      - friend
+      - boss
+    mappings:
+      - type: controlled
+
+  contact_status:
+    type: categorical
+    values:
+      - in_contact
+      - no_contact
+      - blocked
+      - limited
+    mappings:
+      - type: controlled
+
+  relationship_duration:
+    type: text
+    mappings:
+      - type: from_llm
+
+  # ── Conversation context ──────────────────────────────────────────────────
+  pain_point_summary:
+    type: text
+    mappings:
+      - type: controlled
+
+  user_details_mentioned:
+    type: list
+    mappings:
+      - type: controlled
+
+  # ── Engagement tracking ───────────────────────────────────────────────────
+  turn_count:
     type: float
     initial_value: 0
     mappings:
       - type: controlled
-  depth_phase:
+
+  consecutive_short_replies:
+    type: float
+    initial_value: 0
+    mappings:
+      - type: controlled
+
+  engagement_score:
+    type: float
+    initial_value: 1.0
+    mappings:
+      - type: controlled
+
+  prev_msg_word_count:
+    type: float
+    initial_value: 5
+    mappings:
+      - type: controlled
+
+  new_detail_this_turn:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  prev_user_questions:
+    type: list
+    mappings:
+      - type: controlled
+
+  # ── Reading / drip state ──────────────────────────────────────────────────
+  drip_stage:
+    type: float
+    initial_value: 1
+    mappings:
+      - type: controlled
+
+  last_prediction_summary:
     type: text
     mappings:
       - type: controlled
+
+  topic_history:
+    type: list
+    mappings:
+      - type: controlled
+
+  # ── Remedy ────────────────────────────────────────────────────────────────
+  remedy_given:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  remedy_eligible:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  # ── Session management ────────────────────────────────────────────────────
+  session_count:
+    type: float
+    initial_value: 0
+    mappings:
+      - type: controlled
+
+  is_return_session:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  hook_planted:
+    type: text
+    mappings:
+      - type: controlled
+
+  # ── Flow routing flags ────────────────────────────────────────────────────
+  data_collection_complete:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  trigger_reengagement:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  needs_credibility_recovery:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  topic_changed:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  remedy_requested:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  session_closing:
+    type: bool
+    initial_value: false
+    mappings:
+      - type: controlled
+
+  # ── Kept for CALM LLM slot extraction compatibility ──────────────────────
+  analysis_complete:
+    type: bool
+    mappings:
+      - type: controlled
+
   birth_time_known:
     type: bool
     initial_value: false
     mappings:
       - type: controlled
+
   monitoring_mode:
     type: bool
     initial_value: false
     mappings:
       - type: controlled
+
   user_has_new_question:
     type: bool
     initial_value: false
     mappings:
       - type: from_llm
 
-  # ── Astrological context ───────────────────────────────────────────────────
   current_pain_point:
     type: text
     mappings:
       - type: from_llm
 
+  loop_count:
+    type: float
+    initial_value: 0
+    mappings:
+      - type: controlled
+
+  depth_phase:
+    type: text
+    mappings:
+      - type: controlled
+
 responses:
   utter_high_status_intro:
-    - text: "Radhe Radhe ji "
+    - text: "Radhe Radhe ji"
 
-  # Collect-step prompts
   utter_ask_user_analysis_reply:
-    - text: "Aapka issue kya hai"
+    - text: "Batao..."
+
   utter_ask_diagnostic_choice:
-    - text: "Bahar se aa raha hai ya andar se?"
+    - text: "Haan batao..."
 
 intents:
   - greeting
@@ -73,36 +267,76 @@ intents:
   - new_topic
   - emotional_response
   - out_of_scope
+  - share_love_concern
+  - share_career_concern
+  - share_family_concern
+  - share_marriage_concern
+  - ask_open_general
+  - ask_specific_question
+  - share_new_update
+  - ask_remedy
+  - confirm_remedy_done
+  - topic_change
+  - goodbye
+  - returning_user
 
 actions:
-  # ── Entry ──────────────────────────────────────────────────────────────────
-  - action_gemini_autonomous_analysis
+  # ── Session management ────────────────────────────────────────────────────
+  - action_check_return_session
+  - action_return_session_opening
+  - action_analyze_and_route
 
-  # ── Loop control ───────────────────────────────────────────────────────────
+  # ── Phase 1: Opening ──────────────────────────────────────────────────────
+  - action_opening_greeting
+  - action_acknowledge_and_clarify
+
+  # ── Phase 1b: Open-ended handler ──────────────────────────────────────────
+  - action_deliver_resonant_hook
+  - action_offer_topic_choice
+
+  # ── Phase 2: Data collection ──────────────────────────────────────────────
+  - action_data_collection_step
+
+  # ── Phase 3: First reading ────────────────────────────────────────────────
+  - action_deliver_ritual_pause
+  - action_deliver_validation
+  - action_deliver_cosmic_scapegoat
+  - action_deliver_first_drip
+
+  # ── Phase 4: Deepening loop ───────────────────────────────────────────────
+  - action_increment_turn_count
+  - action_monitor_engagement
+  - action_deepen_reading
+  - action_select_recovery_tactic
+  - action_credibility_recovery
+  - action_handle_topic_change
+
+  # ── Phase 5: Remedy ───────────────────────────────────────────────────────
+  - action_check_remedy_eligibility
+  - action_deliver_remedy
+
+  # ── Phase 6: Session close ────────────────────────────────────────────────
+  - action_plant_hook_and_close
+
+  # ── Legacy actions (used in prior flow, still registered) ─────────────────
+  - action_gemini_autonomous_analysis
   - action_increment_loop_count
   - action_route_by_depth
-
-  # ── Phase A: Discovery (iterations 1–2) ───────────────────────────────────
   - action_micro_validation
   - action_generate_astro_insight
   - action_barnum_diagnostic
   - action_check_birth_data
   - action_request_photo_pivot
   - action_balanced_prediction
-  - action_ask_diagnostic_choice
   - action_benchmark_timeline
+  - action_ask_diagnostic_choice
   - action_personalized_prediction
   - action_active_assurance
   - action_provide_ritual_remedy
   - action_retention_hook
-  # - action_diagnostic_choice
-
-  # ── Phase B: Deepening (iterations 3–4) ───────────────────────────────────
   - action_pattern_reinforcement
   - action_shadow_revelation
   - action_connect_past_patterns
-
-  # ── Phase C: Narrative / Monitoring (iteration 5+) ────────────────────────
   - action_enter_monitoring_mode
   - action_benchmark_handover
   - action_guardian_persona

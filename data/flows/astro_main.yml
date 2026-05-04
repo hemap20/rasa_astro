@@ -1,139 +1,143 @@
 flows:
   astro_consultation_flow:
-    description: "High-engagement astrological consultation journey with layered narrative arc"
+    description: "7-phase astrological consultation: emotion-first, engagement-driven, multi-session"
     steps:
-      - action: utter_high_status_intro
 
-      # --- PHASE 1: AUTONOMOUS ANALYSIS (Entry) ---
-      - id: astro_analysis_loop
-        action: action_gemini_autonomous_analysis
+      # ── Session check ──────────────────────────────────────────────────────
+      - action: action_check_return_session
         next:
-          - if: slots.analysis_complete == true
-            then: increment_loop_counter
-          - else: wait_for_user_reply
+          - if: slots.is_return_session == true
+            then: return_open
+          - else: fresh_open
 
-      # --- CORE INPUT ---
-      - id: wait_for_user_reply
+      # ── Phase 7: Return session opening ───────────────────────────────────
+      - id: return_open
+        action: action_return_session_opening
+        next: main_loop
+
+      # ── Phase 1: Opening ──────────────────────────────────────────────────
+      - id: fresh_open
+        action: action_opening_greeting
+        next: collect_opening
+
+      - id: collect_opening
         collect: user_analysis_reply
-        description: "Collects the user's response."
-        next: increment_loop_counter
+        description: "Wait for user's initial message about their concern"
+        next: analyze_route
 
-      - id: increment_loop_counter
-        action: action_increment_loop_count
-        next: route_by_depth
-
-      - id: route_by_depth
-        action: action_route_by_depth 
+      - id: analyze_route
+        action: action_analyze_and_route
         next:
-          - if: slots.depth_phase == "discovery"     
-            then: discovery_phase
-          - if: slots.depth_phase == "deepening"    
-            then: deepening_phase
-          - if: slots.depth_phase == "narrative"  
-            then: narrative_phase
-          - else: discovery_phase
+          - if: slots.topic == "general"
+            then: resonant_hook
+          - else: acknowledge_topic
 
-      # ====================================================
-      # PHASE A: DISCOVERY (Iterations 1–2)
-      # Immediate burning question → Prediction → Remedy
-      # ====================================================
-      - id: discovery_phase
-        action: action_micro_validation        
-        next: provide_astro_insight
+      # ── Phase 1b: Open-ended handler ──────────────────────────────────────
+      - id: resonant_hook
+        action: action_deliver_resonant_hook
+        next: offer_topic
 
-      - id: provide_astro_insight
-        action: action_generate_astro_insight  
-        next: confirm_pattern
+      - id: offer_topic
+        action: action_offer_topic_choice
+        next: collect_topic
 
-      - id: confirm_pattern
-        action: action_barnum_diagnostic       
-        next: first_prediction
+      - id: collect_topic
+        collect: user_analysis_reply
+        description: "User picks love / career / family / etc."
+        next: analyze_topic_choice
 
-      # - id: check_birth_data
-      #   action: action_check_birth_data        
-      #   next:
-      #     - if: slots.birth_time_known == false
-      #       then: photo_pivot
-      #     - else: first_prediction
+      - id: analyze_topic_choice
+        action: action_analyze_and_route
+        next: acknowledge_topic
 
-      # - id: photo_pivot
-      #   action: action_request_photo_pivot     
-      #   next: first_prediction
+      # ── Phase 2: Data collection ──────────────────────────────────────────
+      - id: acknowledge_topic
+        action: action_acknowledge_and_clarify
+        next: data_loop
 
-      - id: first_prediction
-        action: action_balanced_prediction     
-        next: provide_timeline
+      - id: data_loop
+        collect: user_analysis_reply
+        description: "Collect person name, contact status, and other details"
+        next: data_step
 
-      - id: provide_timeline
-        action: action_benchmark_timeline      
-        next: diagnostic_follow_up
-
-      - id: diagnostic_follow_up
-        action: action_ask_diagnostic_choice
-        next: collect_diagnostic_choice
-
-      - id: collect_diagnostic_choice
-        collect: diagnostic_choice
-        next: specific_prediction
-
-      - id: specific_prediction
-        action: action_personalized_prediction   
-        next: deliver_remedy
-
-      - id: deliver_remedy
-        action: action_provide_ritual_remedy      
-        next: secret_revelation
-
-
-
-      # ====================================================
-      # PHASE B: DEEPENING (Iterations 3–4)
-      # Shift from WHAT to WHY and HOW
-      # ====================================================
-      - id: deepening_phase
-        action: action_pattern_reinforcement
-        next: shadow_revelation
-
-      - id: shadow_revelation
-        action: action_shadow_revelation
-        next: past_pattern_connection
-
-      - id: past_pattern_connection
-        action: action_connect_past_patterns
-        next: establish_authority
-      
-      - id: establish_authority
-        action: action_active_assurance
-        next: deepening_remedy
-
-      - id: deepening_remedy
-        action: action_provide_ritual_remedy      
-        next: wait_for_user_reply                 
-
-
-      # ====================================================
-      # PHASE C: NARRATIVE / MONITORING MODE (Iteration 5+)
-      # Stop predicting. Build the Return Hook.
-      # ====================================================
-      - id: narrative_phase
-        action: action_enter_monitoring_mode
-        next: benchmark_handover
-
-      - id: benchmark_handover
-        action: action_benchmark_handover
-        next: guardian_persona
-
-      - id: secret_revelation
-        action: action_retention_hook             
-        next: wait_for_user_reply                 
-      
-      - id: guardian_persona
-        action: action_guardian_persona
-        next: farewell_hook
-
-      - id: farewell_hook
-        action: action_active_assurance
+      - id: data_step
+        action: action_data_collection_step
         next:
-          - if: slots.user_has_new_question == true
-            then: wait_for_user_reply             
-          - else: farewell_hook                   
+          - if: slots.data_collection_complete == true
+            then: ritual_pause
+          - else: data_loop
+
+      # ── Phase 3: First reading ─────────────────────────────────────────────
+      - id: ritual_pause
+        action: action_deliver_ritual_pause
+        next: validation
+
+      - id: validation
+        action: action_deliver_validation
+        next: cosmic_scapegoat
+
+      - id: cosmic_scapegoat
+        action: action_deliver_cosmic_scapegoat
+        next: first_drip
+
+      - id: first_drip
+        action: action_deliver_first_drip
+        next: main_loop
+
+      # ── Phase 4+: Main deepening loop ─────────────────────────────────────
+      - id: main_loop
+        collect: user_analysis_reply
+        description: "Main conversation loop — collects every user message"
+        next: tick
+
+      - id: tick
+        action: action_increment_turn_count
+        next: monitor
+
+      - id: monitor
+        action: action_monitor_engagement
+        next:
+          - if: slots.session_closing == true
+            then: session_close
+          - if: slots.trigger_reengagement == true
+            then: recovery
+          - if: slots.needs_credibility_recovery == true
+            then: credibility
+          - if: slots.topic_changed == true
+            then: pivot
+          - if: slots.remedy_requested == true
+            then: remedy_check
+          - else: deepen
+
+      - id: deepen
+        action: action_deepen_reading
+        next: main_loop
+
+      - id: recovery
+        action: action_select_recovery_tactic
+        next: main_loop
+
+      - id: credibility
+        action: action_credibility_recovery
+        next: main_loop
+
+      - id: pivot
+        action: action_handle_topic_change
+        next: main_loop
+
+      # ── Phase 5: Remedy ────────────────────────────────────────────────────
+      - id: remedy_check
+        action: action_check_remedy_eligibility
+        next:
+          - if: slots.remedy_eligible == true
+            then: give_remedy
+          - else: deepen
+
+      - id: give_remedy
+        action: action_deliver_remedy
+        next: main_loop
+
+      # ── Phase 6: Session close ─────────────────────────────────────────────
+      - id: session_close
+        action: action_plant_hook_and_close
+        next: END
