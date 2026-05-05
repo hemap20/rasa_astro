@@ -307,7 +307,10 @@ PAIN_POINT: <If COMPLETE: one-line summary of user's core concern. If INCOMPLETE
 
             dispatcher.utter_message(text=message.replace("\n", " "))
             if status == "COMPLETE":
-                return [SlotSet("current_pain_point", extracted_pain or user_text)] + wipe_collect_slots()
+                return [
+                    SlotSet("current_pain_point", extracted_pain or user_text),
+                    SlotSet("analysis_complete", True),
+                ] + wipe_collect_slots()
             return wipe_collect_slots()
 
         # Stage 2: collect birth data (max 3 attempts)
