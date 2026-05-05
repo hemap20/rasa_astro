@@ -1,4 +1,5 @@
 import os
+import inspect
 from typing import Any, Text, Dict, List
 from rasa_sdk import Action, Tracker
 from rasa_sdk.executor import CollectingDispatcher
@@ -8,19 +9,63 @@ import google.generativeai as genai
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY"))
 model = genai.GenerativeModel("gemini-2.5-flash")
 
+DEBUG = os.environ.get("DEBUG_PROMPTS", "false").lower() == "true"
+
+
+def _debug_call(label: str, prompt: str, raw: str, reasoning: str = "") -> None:
+    """Print debug info for a Gemini API call."""
+    sep = "─" * 60
+    print(f"\n{sep}")
+    print(f"[DEBUG] {label}")
+    print(f"{sep}")
+    print(f"PROMPT:\n{prompt.strip()}")
+    print(f"{sep}")
+    print(f"RAW RESPONSE:\n{raw.strip()}")
+    if reasoning:
+        print(f"{sep}")
+        print(f"REASONING:\n{reasoning.strip()}")
+    print(f"{sep}\n")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Core helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_conversation_history(tracker: Tracker, n: int = 10) -> str:
+    """Return the last n user+bot turns, ignoring slot/action events."""
     history = []
-    for event in tracker.events[-n:]:
-        if event.get("event") == "user":
+    for event in reversed(tracker.events):
+        if event.get("event") == "user" and event.get("text"):
             history.append(f"User: {event.get('text')}")
         elif event.get("event") == "bot" and event.get("text"):
             history.append(f"Omkar: {event.get('text')}")
-    return "\n".join(history)
+        if len(history) >= n:
+            break
+    return "\n".join(reversed(history))
+
+
+def build_context(tracker: Tracker) -> str:
+    """Build a structured context block from stored slots + recent conversation."""
+    parts = []
+
+    pain_point = tracker.get_slot("current_pain_point")
+    if pain_point:
+        parts.append(f"User's main concern: {pain_point}")
+
+    diagnostic = tracker.get_slot("diagnostic_choice")
+    if diagnostic:
+        parts.append(f"User's follow-up answer: {diagnostic}")
+
+    phase = tracker.get_slot("depth_phase")
+    loop = tracker.get_slot("loop_count")
+    if phase:
+        parts.append(f"Consultation phase: {phase} (iteration {int(loop or 0)})")
+
+    history = get_conversation_history(tracker, n=12)
+    if history:
+        parts.append(f"Recent conversation:\n{history}")
+
+    return "\n\n".join(parts) if parts else "(no context yet)"
 
 
 _OUTPUT_GUARDRAILS = """
@@ -34,8 +79,23 @@ Output guardrails — never do any of the following:
 """
 
 
-def generate_omkar_response(tracker: Tracker, instruction: str) -> str:
-    history = get_conversation_history(tracker)
+def generate_omkar_response(tracker: Tracker, instruction: str, label: str = "") -> str:
+    if DEBUG and not label:
+        frame = inspect.currentframe().f_back
+        caller_self = frame.f_locals.get("self") if frame else None
+        label = caller_self.name() if caller_self and hasattr(caller_self, "name") else "unknown_action"
+    context = build_context(tracker)
+    if DEBUG:
+        output_format = (
+            "OUTPUT FORMAT (debug mode — two lines only):\n"
+            "REASONING: <one sentence: why this response fits the task>\n"
+            "RESPONSE: <Omkar's actual message>\n"
+        )
+        output_instruction = "Output REASONING then RESPONSE as shown above."
+    else:
+        output_format = ""
+        output_instruction = "OUTPUT ONLY OMKAR'S RESPONSE. No labels, no script, no explanation."
+
     prompt = f"""
 You are Omkar, an Indian astrologer texting a person. Casual, warm, direct, yet polite.
 
@@ -52,27 +112,35 @@ CONVERSATION RULES:
 - NEVER ask a vague open-ended question like "kya chal raha hai?" — ask something SPECIFIC.
 - NEVER answer your own question in the same message.
 
-Recent conversation:
-{history}
+Context:
+{context}
 
 YOUR TASK:
 {instruction}
 
-OUTPUT ONLY OMKAR'S RESPONSE. No labels, no script, no explanation.
+{output_format}{output_instruction}
 {_OUTPUT_GUARDRAILS}
 """
     try:
-        return model.generate_content(prompt).text.replace("\n", " ").strip()
+        raw = model.generate_content(prompt).text.strip()
+        if DEBUG:
+            reasoning, response = "", raw
+            for line in raw.splitlines():
+                if line.upper().startswith("REASONING:"):
+                    reasoning = line.split(":", 1)[1].strip()
+                elif line.upper().startswith("RESPONSE:"):
+                    response = line.split(":", 1)[1].strip()
+            _debug_call(label, prompt, raw, reasoning)
+            return response.replace("\n", " ").strip()
+        return raw.replace("\n", " ").strip()
     except Exception:
         return "fallback omkar response"
 
 
 def wipe_collect_slots() -> List[Dict]:
-    """Reset collect slots so the next collect step always pauses for input."""
-    return [
-        SlotSet("user_analysis_reply", None),
-        SlotSet("diagnostic_choice", None),
-    ]
+    """Reset only user_analysis_reply so the next collect step pauses for input.
+    diagnostic_choice is kept — it feeds into build_context for all subsequent prompts."""
+    return [SlotSet("user_analysis_reply", None)]
 
 
 def clear_signal() -> List[Dict]:
@@ -180,14 +248,14 @@ class ActionGeminiAutonomousAnalysis(Action):
         return "action_gemini_autonomous_analysis"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        history = get_conversation_history(tracker, n=15)
+        context = build_context(tracker)
         user_text = tracker.latest_message.get("text", "")
 
         prompt = f"""
 You are Omkar, a wise, grounded Indian Vedic astrologer. Speak in natural, simple Hinglish (Latin Script).
 
-Recent conversation history:
-{history}
+Context:
+{context}
 
 User's latest message: "{user_text}"
 
@@ -210,6 +278,8 @@ MESSAGE: <If INCOMPLETE: one short casual Hinglish question to understand their 
 """
         try:
             raw = model.generate_content(prompt).text.strip()
+            if DEBUG:
+                _debug_call("action_gemini_autonomous_analysis", prompt, raw)
             status = "INCOMPLETE"
             message = "Aapki problem kya hai, thoda aur batao?"
             for line in raw.splitlines():
@@ -224,7 +294,10 @@ MESSAGE: <If INCOMPLETE: one short casual Hinglish question to understand their 
         dispatcher.utter_message(text=message.replace("\n", " "))
 
         if status == "COMPLETE":
-            return [SlotSet("analysis_complete", True)] + wipe_collect_slots()
+            return [
+                SlotSet("analysis_complete", True),
+                SlotSet("current_pain_point", user_text),
+            ] + wipe_collect_slots()
         return wipe_collect_slots()
 
 
@@ -412,7 +485,7 @@ class ActionProvideRitualRemedy(Action):
         return "action_provide_ritual_remedy"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        history = get_conversation_history(tracker, n=10)
+        context = build_context(tracker)
         monitoring_mode = tracker.get_slot("monitoring_mode") or False
         framing = (
             "a karmic correction ritual — frame it as breaking a repeating planetary cycle"
@@ -426,8 +499,8 @@ class ActionProvideRitualRemedy(Action):
 
         prompt = f"""You are Omkar, a grounded Vedic astrologer. Speak in simple Hinglish (latin script).
 
-            Recent conversation:
-            {history}
+            Context:
+            {context}
 
             {aaa_prefix}TASK: Design ONE complete remedy as {framing}, tailored to the user's specific situation.
 
@@ -445,7 +518,10 @@ class ActionProvideRitualRemedy(Action):
             Rules: Maximum 3 short sentences total. Natural and grounded. No heavy jargon.
             {_OUTPUT_GUARDRAILS}"""
         try:
-            remedy = model.generate_content(prompt).text.replace("\n", " ").strip()
+            raw_remedy = model.generate_content(prompt).text.strip()
+            if DEBUG:
+                _debug_call("action_provide_ritual_remedy", prompt, raw_remedy)
+            remedy = raw_remedy.replace("\n", " ").strip()
         except Exception:
             remedy = "fallback remedy"
         dispatcher.utter_message(text=remedy)
@@ -617,12 +693,12 @@ class ActionClassifyUserIntent(Action):
         return "action_classify_user_intent"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
-        history = get_conversation_history(tracker, n=5)
+        context = build_context(tracker)
         user_text = tracker.latest_message.get("text", "")
         prompt = f"""You are classifying a user message in a Hinglish astrology chatbot conversation.
 
-Recent conversation:
-{history}
+Context:
+{context}
 
 User's latest message: "{user_text}"
 
@@ -632,7 +708,10 @@ Classify the user's message into EXACTLY ONE of these intents:
 Reply with ONLY the intent label, nothing else. No explanation, no punctuation.
 Valid labels: {', '.join(_INTENT_LABELS)}"""
         try:
-            label = model.generate_content(prompt).text.strip().lower().split()[0]
+            raw_label = model.generate_content(prompt).text.strip()
+            if DEBUG:
+                _debug_call("action_classify_user_intent", prompt, raw_label)
+            label = raw_label.lower().split()[0]
             if label not in _INTENT_LABELS:
                 label = "other"
         except Exception:
@@ -701,7 +780,10 @@ Write 2 short Hinglish sentences. Warm, human, no astrology.
 
 OUTPUT ONLY OMKAR'S RESPONSE."""
         try:
-            response = model.generate_content(prompt).text.replace("\n", " ").strip()
+            raw_response = model.generate_content(prompt).text.strip()
+            if DEBUG:
+                _debug_call("action_handle_crisis", prompt, raw_response)
+            response = raw_response.replace("\n", " ").strip()
         except Exception:
             response = "Aap akele nahi hain. Kisi apne se baat karein, ya iCall helpline pe call karein: 9152987821."
         dispatcher.utter_message(text=response)
