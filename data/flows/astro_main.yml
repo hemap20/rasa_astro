@@ -67,10 +67,12 @@ flows:
             then: deepening_phase
           - if: slots.depth_phase == "narrative"
             then: narrative_phase
+          - if: slots.depth_phase == "narrative_active"
+            then: guardian_persona
           - else: discovery_phase
 
       # ====================================================
-      # PHASE A: DISCOVERY (Iterations 1–2)
+      # PHASE A: DISCOVERY (Iteration 1)
       # ====================================================
       - id: discovery_phase
         action: action_micro_validation
@@ -78,15 +80,20 @@ flows:
 
       - id: provide_astro_insight
         action: action_generate_astro_insight
+        next: confirm_pattern
+
+      - id: confirm_pattern
+        action: action_barnum_diagnostic
+        next: collect_barnum_response
+
+      - id: collect_barnum_response
+        collect: user_analysis_reply
+        ask_before_filling: false
+        next: first_prediction
+
+      - id: first_prediction
+        action: action_balanced_prediction
         next: provide_timeline
-
-      # - id: confirm_pattern
-      #   action: action_barnum_diagnostic
-      #   next: provide_timeline
-
-      # - id: first_prediction
-      #   action: action_balanced_prediction
-      #   next: provide_timeline
 
       - id: provide_timeline
         action: action_benchmark_timeline
@@ -107,10 +114,10 @@ flows:
 
       - id: deliver_remedy
         action: action_provide_ritual_remedy
-        next: secret_revelation
+        next: wait_for_user_reply
 
       # ====================================================
-      # PHASE B: DEEPENING (Iterations 3–4)
+      # PHASE B: DEEPENING (Iterations 2–3)
       # ====================================================
       - id: deepening_phase
         action: action_pattern_reinforcement
@@ -133,7 +140,7 @@ flows:
         next: wait_for_user_reply
 
       # ====================================================
-      # PHASE C: NARRATIVE / MONITORING (Iteration 5+)
+      # PHASE C: NARRATIVE / MONITORING (Iteration 4+)
       # ====================================================
       - id: narrative_phase
         action: action_enter_monitoring_mode
@@ -141,7 +148,7 @@ flows:
 
       - id: benchmark_handover
         action: action_benchmark_handover
-        next: guardian_persona
+        next: secret_revelation
 
       - id: secret_revelation
         action: action_retention_hook
@@ -153,7 +160,4 @@ flows:
 
       - id: farewell_hook
         action: action_active_assurance
-        next:
-          - if: slots.user_has_new_question == true
-            then: wait_for_user_reply
-          - else: farewell_hook
+        next: wait_for_user_reply

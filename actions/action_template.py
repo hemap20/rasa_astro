@@ -52,6 +52,13 @@ def build_context(tracker: Tracker) -> str:
     if pain_point:
         parts.append(f"User's main concern: {pain_point}")
 
+    # birth_date = tracker.get_slot("birth_date")
+    # birth_time = tracker.get_slot("birth_time")
+    # birth_place = tracker.get_slot("birth_place")
+    # birth_parts = [x for x in [birth_date, birth_time, birth_place] if x]
+    # if birth_parts:
+    #     parts.append(f"Birth info: {', '.join(birth_parts)}")
+
     diagnostic = tracker.get_slot("diagnostic_choice")
     if diagnostic:
         parts.append(f"User's follow-up answer: {diagnostic}")
@@ -250,8 +257,18 @@ class ActionGeminiAutonomousAnalysis(Action):
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
         context = build_context(tracker)
         user_text = tracker.latest_message.get("text", "")
+        pain_point = tracker.get_slot("current_pain_point")
+        # birth_date = tracker.get_slot("birth_date")
+        # birth_time = tracker.get_slot("birth_time")
+        # birth_place = tracker.get_slot("birth_place")
+        # birth_attempts = int(tracker.get_slot("birth_info_attempts") or 0)
 
-        prompt = f"""
+        # has_birth_data = bool(birth_date or birth_time or birth_place)
+        # birth_exhausted = birth_attempts >= 3
+
+        # Stage 1: understand the problem
+        if not pain_point:
+            prompt = f"""
 You are Omkar, a wise, grounded Indian Vedic astrologer. Speak in natural, simple Hinglish (Latin Script).
 
 Context:
@@ -260,45 +277,103 @@ Context:
 User's latest message: "{user_text}"
 
 TASK:
-Decide if you understand the user's core problem (job, relationship, health, etc.).
+Decide if you understand the user's core problem (job, relationship, health, finances, etc.).
 
 Special cases:
-- If the user just said a greeting ("hi", "hello", "namaste") with no problem stated → STATUS: INCOMPLETE,
-  MESSAGE: greet them back and ask them what brings them here
-- If the user said something vague or short with no clear problem → STATUS: INCOMPLETE,
-  MESSAGE: ask one follow-up question narrow down the category which they want to explore
+- If the user just said a greeting with no problem stated → STATUS: INCOMPLETE, ask casually what brings them here
+- If vague or unclear → STATUS: INCOMPLETE, ask one follow-up to narrow it down
 
-Return EXACTLY in the format below, nothing else:
-
+Return EXACTLY:
 STATUS: <INCOMPLETE | COMPLETE>
-MESSAGE: <If INCOMPLETE: one short casual Hinglish question to understand their problem.
-          If COMPLETE: Empty>
+MESSAGE: <If INCOMPLETE: one short casual Hinglish question. If COMPLETE: empty>
+PAIN_POINT: <If COMPLETE: one-line summary of user's core concern. If INCOMPLETE: empty>
 
 {_OUTPUT_GUARDRAILS}
 """
-        try:
-            raw = model.generate_content(prompt).text.strip()
-            if DEBUG:
-                _debug_call("action_gemini_autonomous_analysis", prompt, raw)
-            status = "INCOMPLETE"
-            message = "Aapki problem kya hai, thoda aur batao?"
-            for line in raw.splitlines():
-                if line.upper().startswith("STATUS:"):
-                    status = line.split(":", 1)[1].strip().upper()
-                elif line.upper().startswith("MESSAGE:"):
-                    message = line.split(":", 1)[1].strip()
-        except Exception:
-            status = "INCOMPLETE"
-            message = "fallback omkar follow up question"
+            try:
+                raw = model.generate_content(prompt).text.strip()
+                if DEBUG:
+                    _debug_call("action_gemini_autonomous_analysis [stage: problem]", prompt, raw)
+                status, message, extracted_pain = "INCOMPLETE", "Aapki problem kya hai?", ""
+                for line in raw.splitlines():
+                    if line.upper().startswith("STATUS:"):
+                        status = line.split(":", 1)[1].strip().upper()
+                    elif line.upper().startswith("MESSAGE:"):
+                        message = line.split(":", 1)[1].strip()
+                    elif line.upper().startswith("PAIN_POINT:"):
+                        extracted_pain = line.split(":", 1)[1].strip()
+            except Exception:
+                status, message, extracted_pain = "INCOMPLETE", "Aapki problem kya hai?", ""
 
-        dispatcher.utter_message(text=message.replace("\n", " "))
+            dispatcher.utter_message(text=message.replace("\n", " "))
+            if status == "COMPLETE":
+                return [SlotSet("current_pain_point", extracted_pain or user_text)] + wipe_collect_slots()
+            return wipe_collect_slots()
 
-        if status == "COMPLETE":
-            return [
-                SlotSet("analysis_complete", True),
-                SlotSet("current_pain_point", user_text),
-            ] + wipe_collect_slots()
-        return wipe_collect_slots()
+        # Stage 2: collect birth data (max 3 attempts)
+#         if not has_birth_data and not birth_exhausted:
+#             prompt = f"""
+# You are Omkar, a wise, grounded Indian Vedic astrologer. Speak in natural, simple Hinglish (Latin Script).
+
+# Context:
+# {context}
+
+# User's latest message: "{user_text}"
+
+# TASK:
+# Check if the user has provided any birth details (date of birth, time of birth, place of birth).
+# Extract whatever is present. If nothing is present, ask for all three in one casual Hinglish sentence.
+
+# This is attempt {birth_attempts + 1} of 3.
+
+# Return EXACTLY:
+# STATUS: <INCOMPLETE | COMPLETE>
+# MESSAGE: <If INCOMPLETE: one casual Hinglish sentence asking for missing birth details. If COMPLETE: one warm acknowledgement>
+# BIRTH_DATE: <extracted date or empty>
+# BIRTH_TIME: <extracted time or empty>
+# BIRTH_PLACE: <extracted place or empty>
+
+# {_OUTPUT_GUARDRAILS}
+# """
+#             try:
+#                 raw = model.generate_content(prompt).text.strip()
+#                 if DEBUG:
+#                     _debug_call("action_gemini_autonomous_analysis [stage: birth]", prompt, raw)
+#                 status = "INCOMPLETE"
+#                 message = "Aapki date of birth, time aur place batao?"
+#                 extracted = {"date": "", "time": "", "place": ""}
+#                 for line in raw.splitlines():
+#                     key = line.split(":", 1)[0].strip().upper()
+#                     val = line.split(":", 1)[1].strip() if ":" in line else ""
+#                     if key == "STATUS":
+#                         status = val.upper()
+#                     elif key == "MESSAGE":
+#                         message = val
+#                     elif key == "BIRTH_DATE":
+#                         extracted["date"] = val
+#                     elif key == "BIRTH_TIME":
+#                         extracted["time"] = val
+#                     elif key == "BIRTH_PLACE":
+#                         extracted["place"] = val
+#             except Exception:
+#                 status, message, extracted = "INCOMPLETE", "Date of birth, time aur jagah batao?", {"date": "", "time": "", "place": ""}
+
+#             dispatcher.utter_message(text=message.replace("\n", " "))
+#             events = [SlotSet("birth_info_attempts", birth_attempts + 1)]
+#             if extracted["date"]:
+#                 events.append(SlotSet("birth_date", extracted["date"]))
+#             if extracted["time"]:
+#                 events.append(SlotSet("birth_time", extracted["time"]))
+#                 events.append(SlotSet("birth_time_known", True))
+#             if extracted["place"]:
+#                 events.append(SlotSet("birth_place", extracted["place"]))
+#             if status == "COMPLETE" or (extracted["date"] and extracted["place"]):
+#                 events.append(SlotSet("analysis_complete", True))
+#             return events + wipe_collect_slots()
+
+#         # Stage 3: birth attempts exhausted or data already collected — proceed
+#         dispatcher.utter_message(text="Theek hai, chalte hain.")
+#         return [SlotSet("analysis_complete", True)] + wipe_collect_slots()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -320,9 +395,13 @@ class ActionRouteByDepth(Action):
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
         count = float(tracker.get_slot("loop_count") or 0)
-        if count <= 2:
+        monitoring = tracker.get_slot("monitoring_mode") or False
+        if monitoring:
+            # Already in monitoring mode — stay in narrative without re-running the entry sequence
+            phase = "narrative_active"
+        elif count <= 1:
             phase = "discovery"
-        elif count <= 4:
+        elif count <= 3:
             phase = "deepening"
         else:
             phase = "narrative"
@@ -340,7 +419,8 @@ class ActionMicroValidation(Action):
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict) -> List:
         base = (
             "The user just shared their core problem. Empathize briefly and acknowledge their "
-            "core anxiety in a warm, grounded way. Make them feel heard without being dramatic."
+            "core anxiety in a warm, grounded way. You should sound genuine. "
+            "Make them feel heard without being dramatic. Do not ask further questions. "
         )
         dispatcher.utter_message(text=generate_omkar_response(tracker, build_instruction(tracker, base)))
         return clear_signal()

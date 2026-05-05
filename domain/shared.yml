@@ -51,6 +51,25 @@ slots:
     mappings:
       - type: custom
 
+  # # ── Birth data ────────────────────────────────────────────────────────────
+  # birth_date:
+  #   type: text
+  #   mappings:
+  #     - type: controlled
+  # birth_time:
+  #   type: text
+  #   mappings:
+  #     - type: controlled
+  # birth_place:
+  #   type: text
+  #   mappings:
+  #     - type: controlled
+  # birth_info_attempts:
+  #   type: float
+  #   initial_value: 0
+  #   mappings:
+  #     - type: controlled
+
   # ── Astrological context ───────────────────────────────────────────────────
   current_pain_point:
     type: text
@@ -62,7 +81,7 @@ responses:
     - text: "Radhe Radhe ji "
 
   utter_ask_user_analysis_reply:
-    - text: "Aapka issue kya hai"
+    - text: ""
   utter_ask_diagnostic_choice:
     - text: ""
 
